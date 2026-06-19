@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 from .entity import EGOptimizerEntity
@@ -19,7 +20,7 @@ async def async_setup_entry(
     add([TargetMorningSoc(coord), ExplorationAggressiveness(coord)])
 
 
-class TargetMorningSoc(EGOptimizerEntity, NumberEntity):
+class TargetMorningSoc(EGOptimizerEntity, NumberEntity, RestoreEntity):
     _attr_name = "Target morning SoC"
     _attr_icon = "mdi:battery-charging-50"
     _attr_native_unit_of_measurement = PERCENTAGE
@@ -35,12 +36,24 @@ class TargetMorningSoc(EGOptimizerEntity, NumberEntity):
     def native_value(self) -> float:
         return self.coordinator.target_morning_soc
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None or last.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        try:
+            value = float(last.state)
+        except (TypeError, ValueError):
+            return
+        value = max(self._attr_native_min_value, min(self._attr_native_max_value, value))
+        self.coordinator.target_morning_soc = value
+
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.target_morning_soc = float(value)
         await self.coordinator.async_request_refresh()
 
 
-class ExplorationAggressiveness(EGOptimizerEntity, NumberEntity):
+class ExplorationAggressiveness(EGOptimizerEntity, NumberEntity, RestoreEntity):
     _attr_name = "Exploration aggressiveness"
     _attr_icon = "mdi:flask-outline"
     _attr_native_min_value = 0.0
@@ -54,6 +67,18 @@ class ExplorationAggressiveness(EGOptimizerEntity, NumberEntity):
     @property
     def native_value(self) -> float:
         return self.coordinator.aggressiveness
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None or last.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        try:
+            value = float(last.state)
+        except (TypeError, ValueError):
+            return
+        value = max(self._attr_native_min_value, min(self._attr_native_max_value, value))
+        self.coordinator.aggressiveness = value
 
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.aggressiveness = float(value)

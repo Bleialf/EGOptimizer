@@ -54,6 +54,19 @@ def _plan_preview(data: dict, limit: int = 4) -> str:
     return ", ".join(parts) if parts else "none"
 
 
+def _decision_info(data: dict) -> dict:
+    debug = data.get("debug") or {}
+    decision = debug.get("decision")
+    if isinstance(decision, dict) and decision:
+        return decision
+    return {
+        "path": _plan_state(data),
+        "status": data.get("status"),
+        "confidence": data.get("confidence"),
+        "note": data.get("rationale"),
+    }
+
+
 SENSORS: tuple[EGSensor, ...] = (
     EGSensor(key="feed_kw", name="Feed setpoint", icon="mdi:transmission-tower-export",
              native_unit_of_measurement=UnitOfPower.WATT,
@@ -121,6 +134,6 @@ class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
                 "planned_tonight_kwh": data.get("planned_tonight_kwh"),
                 "plan_preview": _plan_preview(data),
                 "feed_plan": data.get("feed_plan"),
-                "decision": (data.get("debug") or {}).get("decision"),
+                "decision": _decision_info(data),
             }
         return None
