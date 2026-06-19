@@ -169,11 +169,11 @@ automation:
         target:
           entity_id: number.victron_ess_grid_setpoint  # <- your entity
         data:
-          # Victron grid setpoint is negative watts for exporting
-          value: "{{ (states('sensor.egoptimizer_feed_setpoint') | float(0) * -1) | round(0) }}"
+          # Feed setpoint is already negative watts for exporting
+          value: "{{ (states('sensor.egoptimizer_feed_setpoint') | float(0)) | round(0) }}"
 ```
 
-(Multiply by -1: the feed setpoint sensor is already in watts.)
+(No sign conversion needed: the feed setpoint sensor already uses negative watts for export.)
 
 ---
 

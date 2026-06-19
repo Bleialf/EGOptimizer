@@ -129,5 +129,6 @@ action:
             target:
               entity_id: !input victron_gridsetpoint_entity
             data:
-              # Clamp to max_export (kW converted to W), then negate for export.
-              value: "{{ (min(feed_w, max_export * 1000) * -1) | round(0) }}"
+              # Feed setpoint is already negative watts (export convention).
+              # Clamp by absolute cap and force negative to protect Victron.
+              value: "{{ (-1 * min(abs(feed_w), max_export * 1000)) | round(0) }}"
