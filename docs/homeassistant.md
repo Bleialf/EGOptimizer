@@ -133,12 +133,47 @@ You'll see: the live feed setpoint, how much is going to the EG vs reserved for
 your house, whether the system is currently *exploring* (probing above known
 uptake), and the plain-language reason for the current decision.
 
-## 5. Acting on it (Phase 4)
+## 5. Phase 4: Drive the Victron ESS grid setpoint
 
-Once you trust the numbers, an automation maps `input_number.egopt_feed_kw` to
-the Victron ESS grid setpoint (e.g. `number.victron_ess_grid_setpoint` or a
-DVCC/ESS control). Until then, the dashboard is advisory -- you keep setting the
-feed-in yourself, and the system learns from what the EG absorbs.
+Once you trust the numbers, an automation maps the recommendation to Victron's
+actual grid setpoint (not advisory anymore — it's live on your inverter).
+
+### Using the HACS integration (recommended)
+
+The integration already creates `sensor.egoptimizer_feed_setpoint`. A Home
+Assistant **blueprint** wires it to your Victron and adds safeguards:
+
+1. **Settings → Automation & Scenes → Create Automation → Create from blueprint**
+2. Search for **EGOptimizer** (or import [docs/automation-blueprint.yaml](automation-blueprint.yaml) directly)
+3. Fill in your **Victron grid setpoint entity** and **max export power cap**
+4. Done — the automation runs every 15 min and drives your inverter
+
+**Safety guarantees:**
+- Victron's minimum-SoC floor always wins (the brain never commands below it)
+- Max export cap clamps to your battery's max discharge
+- Mode guard: only feeds when the model is trained ("explore" / "locked")
+- Advisory by default: nothing happens until you import and save the blueprint
+
+### Manual automation (without blueprint)
+
+If you prefer YAML, add this to your `configuration.yaml`:
+
+```yaml
+automation:
+  - alias: EGOptimizer - drive Victron grid setpoint
+    trigger:
+      - platform: state
+        entity_id: sensor.egoptimizer_feed_setpoint
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.victron_ess_grid_setpoint  # <- your entity
+        data:
+          # Victron grid setpoint is negative watts for exporting
+          value: "{{ (states('sensor.egoptimizer_feed_setpoint') | float(0) * -1000) | round(0) }}"
+```
+
+(Multiply by -1000: Victron uses negative watts for feeding to grid.)
 
 ---
 

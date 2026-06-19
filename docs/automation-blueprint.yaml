@@ -1,0 +1,133 @@
+blueprint:
+  name: EGOptimizer - Drive Victron ESS Grid Setpoint
+  description: |
+    Maps EGOptimizer feed recommendation to Victron ESS grid setpoint.
+    The brain stays advisory; this automation makes it live.
+    Safeguards: respects mode (only feed when exploring or confident),
+    enforces a max export cap, and lets Victron's minimum-SoC be the floor.
+  domain: automation
+  input:
+    egoptimizer_feed_entity:
+      name: EGOptimizer feed setpoint
+      description: The sensor.egoptimizer_feed_setpoint entity
+      selector:
+        entity:
+          domain: sensor
+    victron_gridsetpoint_entity:
+      name: Victron ESS grid setpoint
+      description: |
+        The number entity controlling Victron ESS grid setpoint.
+        Examples:
+        - number.victron_ess_grid_setpoint (Modbus)
+        - number.inverter_grid_setpoint (some Venus integrations)
+        Check your Victron integration docs for the exact entity.
+      selector:
+        entity:
+          domain: number
+    max_export_kw:
+      name: Maximum export power
+      description: Hard cap on how many kW to feed (safety limit)
+      default: 3.5
+      selector:
+        number:
+          min: 0.1
+          max: 10
+          step: 0.1
+          unit_of_measurement: kW
+    mode_entity:
+      name: EGOptimizer mode (optional)
+      description: |
+        If set, only feed when mode is "explore" or "locked".
+        If mode is "no_model" or "holding", setpoint goes to 0.
+        Leave blank to always feed (no mode check).
+      default: ""
+      selector:
+        entity:
+          domain: select
+          entity_category: diagnostic
+    status_entity:
+      name: EGOptimizer status (optional)
+      description: |
+        If set, only feed when status is "feeding" (not "no_budget" or "holding").
+        Leave blank to skip status check.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          entity_category: diagnostic
+
+trigger:
+  - trigger: state
+    entity_id: !input egoptimizer_feed_entity
+
+action:
+  - variables:
+      feed_kw: "{{ (states(trigger.entity_id) | float(0)) }}"
+      max_export: !input max_export_kw
+      mode: "{{ states(trigger.entity_id + '.mode') | default('') }}"
+      status: "{{ states(trigger.entity_id + '.status') | default('') }}"
+      mode_entity: !input mode_entity
+      status_entity: !input status_entity
+      mode_check_enabled: "{{ mode_entity != '' }}"
+      status_check_enabled: "{{ status_entity != '' }}"
+
+  - choose:
+      # If mode is set and it's "no_model" or "holding", don't feed
+      - conditions:
+          - "{{ mode_check_enabled }}"
+          - condition: state
+            entity_id: !input mode_entity
+            state: "no_model"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input victron_gridsetpoint_entity
+            data:
+              value: 0
+
+      - conditions:
+          - "{{ mode_check_enabled }}"
+          - condition: state
+            entity_id: !input mode_entity
+            state: "holding"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input victron_gridsetpoint_entity
+            data:
+              value: 0
+
+      # If status is set and it's "no_budget" or "holding", don't feed
+      - conditions:
+          - "{{ status_check_enabled }}"
+          - condition: state
+            entity_id: !input status_entity
+            state: "no_budget"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input victron_gridsetpoint_entity
+            data:
+              value: 0
+
+      - conditions:
+          - "{{ status_check_enabled }}"
+          - condition: state
+            entity_id: !input status_entity
+            state: "holding"
+        sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input victron_gridsetpoint_entity
+            data:
+              value: 0
+
+      # Default: set gridsetpoint = -1000 × feed_kw (in watts)
+      # Negative because Victron uses negative for exporting to grid
+      - sequence:
+          - service: number.set_value
+            target:
+              entity_id: !input victron_gridsetpoint_entity
+            data:
+              # Clamp to max_export, convert kW to W (× 1000), negate
+              value: "{{ (min(feed_kw, max_export) * -1000) | round(0) }}"
