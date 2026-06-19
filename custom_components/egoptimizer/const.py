@@ -10,7 +10,8 @@ CONF_BRAIN_URL = "brain_url"
 CONF_CAPACITY_KWH = "capacity_kwh"
 CONF_SOC_ENTITY = "soc_entity"
 CONF_LOAD_ENTITY = "load_entity"
-CONF_SOLCAST_ENTITY = "solcast_entity"
+CONF_SOLCAST_ENTITY = "solcast_entity"            # Prognose heute
+CONF_SOLCAST_TOMORROW_ENTITY = "solcast_tomorrow_entity"  # Prognose morgen
 CONF_HARD_MIN_ENTITY = "hard_min_entity"
 CONF_SCAN_MINUTES = "scan_minutes"
 

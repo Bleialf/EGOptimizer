@@ -20,6 +20,7 @@ from .const import (
     CONF_SCAN_MINUTES,
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
+    CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_TARGET_MORNING_SOC,
     DEFAULT_AGGRESSIVENESS,
     DEFAULT_MODE,
@@ -43,6 +44,7 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         self._soc = data[CONF_SOC_ENTITY]
         self._load = data.get(CONF_LOAD_ENTITY)
         self._solcast = data.get(CONF_SOLCAST_ENTITY)
+        self._solcast_tomorrow = data.get(CONF_SOLCAST_TOMORROW_ENTITY)
         self._hard_min = data.get(CONF_HARD_MIN_ENTITY)
         # Mutable runtime controls, also editable via number/select entities.
         self.target_morning_soc = float(
@@ -86,12 +88,20 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         hard_min = self._num(self._hard_min)
         if hard_min is not None:
             payload["hard_min_soc_pct"] = hard_min
-        if self._solcast:
-            st = self.hass.states.get(self._solcast)
-            slots = st.attributes.get(SOLCAST_ATTR) if st else None
-            if slots:
-                payload["pv_forecast"] = slots
+        # Concatenate today + tomorrow hourly forecasts so the forward
+        # simulation always has PV from now until the morning trough, no
+        # matter what time of day it runs. The brain ignores past slots.
+        slots = self._solcast_slots(self._solcast) + self._solcast_slots(self._solcast_tomorrow)
+        if slots:
+            payload["pv_forecast"] = slots
         return payload
+
+    def _solcast_slots(self, entity_id: str | None) -> list:
+        if not entity_id:
+            return []
+        st = self.hass.states.get(entity_id)
+        slots = st.attributes.get(SOLCAST_ATTR) if st else None
+        return list(slots) if slots else []
 
     async def _async_update_data(self) -> dict:
         payload = self._build_payload()

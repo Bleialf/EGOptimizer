@@ -33,6 +33,7 @@ from .const import (
     CONF_SCAN_MINUTES,
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
+    CONF_SOLCAST_TOMORROW_ENTITY,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SCAN_MINUTES,
     DOMAIN,
@@ -49,6 +50,7 @@ STEP_USER = vol.Schema(
         vol.Required(CONF_SOC_ENTITY): _SENSOR,
         vol.Optional(CONF_LOAD_ENTITY): _SENSOR,
         vol.Optional(CONF_SOLCAST_ENTITY): _SENSOR,
+        vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY): _SENSOR,
         vol.Optional(CONF_HARD_MIN_ENTITY): _SENSOR,
         vol.Optional(CONF_SCAN_MINUTES, default=DEFAULT_SCAN_MINUTES): NumberSelector(
             NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min")
@@ -162,6 +164,7 @@ class EGOptimizerOptionsFlow(OptionsFlow):
                 vol.Required(CONF_SOC_ENTITY, default=cur.get(CONF_SOC_ENTITY)): _SENSOR,
                 vol.Optional(CONF_LOAD_ENTITY, default=cur.get(CONF_LOAD_ENTITY, "")): _SENSOR,
                 vol.Optional(CONF_SOLCAST_ENTITY, default=cur.get(CONF_SOLCAST_ENTITY, "")): _SENSOR,
+                vol.Optional(CONF_SOLCAST_TOMORROW_ENTITY, default=cur.get(CONF_SOLCAST_TOMORROW_ENTITY, "")): _SENSOR,
                 vol.Optional(CONF_HARD_MIN_ENTITY, default=cur.get(CONF_HARD_MIN_ENTITY, "")): _SENSOR,
                 vol.Optional(CONF_SCAN_MINUTES, default=cur.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)):
                     NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min")),
