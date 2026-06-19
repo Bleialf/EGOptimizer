@@ -1,7 +1,9 @@
 services:
   egoptimizer:
-    build: .
-    image: egoptimizer:latest
+    # Use the published image, or comment `image:` and uncomment `build: .`
+    # to build locally.
+    image: ghcr.io/bleialf/egoptimizer:latest
+    # build: .
     container_name: egoptimizer
     restart: unless-stopped
     ports:
@@ -14,7 +16,7 @@ services:
   # the host scheduler (or `docker compose run`) invokes it. Uncomment to use
   # a sidecar cron, or just run `docker compose run --rm train` from cron.
   train:
-    image: egoptimizer:latest
+    image: ghcr.io/bleialf/egoptimizer:latest
     profiles: ["tools"]
     volumes:
       - ./data:/app/data

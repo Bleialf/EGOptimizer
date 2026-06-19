@@ -8,7 +8,7 @@ The output is simple: **how many kW to push into the grid right now.** It is
 computed continuously from your battery state, tomorrow's PV forecast, your
 live house load, and a model of what the community can actually absorb.
 
-[![CI](https://github.com/OWNER/EGOptimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/EGOptimizer/actions/workflows/ci.yml)
+[![CI](https://github.com/bleialf/EGOptimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/bleialf/EGOptimizer/actions/workflows/ci.yml)
 [![hacs](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
 
 ---
@@ -74,11 +74,17 @@ python -m brain.analysis.evaluate                  # backtest: capture vs spill
 python -m brain.api.server                         # serve POST /recommend on :8787
 ```
 
-Or with Docker:
+Or with Docker — pull the pre-built image from GitHub Container Registry:
 
 ```bash
-docker compose up -d        # serves the API; mount ./data for your CSVs + db
+docker pull ghcr.io/bleialf/egoptimizer:latest
+docker run -d -p 8787:8787 -v "$PWD/data:/app/data" ghcr.io/bleialf/egoptimizer:latest
+# or simply:  docker compose up -d
 ```
+
+The image is built and published automatically by GitHub Actions on every push
+to `main` and on version tags (`vX.Y.Z`) — see
+[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml).
 
 ## Home Assistant
 
