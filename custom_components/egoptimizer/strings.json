@@ -21,7 +21,7 @@
           "soc_entity": "Current battery charge in %. Required — this drives every calculation.",
           "load_entity": "Live household consumption (W). Prefer a smoothed/averaged sensor so a kettle switching on doesn't jerk the plan. The brain uses it to estimate overnight load.",
           "solcast_entity": "Solcast 'Prognose heute' sensor (e.g. sensor.solcast_pv_forecast_forecast_today). The brain reads its hourly 'detailedHourly' attribute and takes the pessimistic P10 estimate per hour — P10 because under-promising on PV keeps your autarky safe.",
-          "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor (e.g. ..._forecast_tomorrow). Add this too — the battery's overnight low point usually falls tomorrow morning, so the recharge curve lives in tomorrow's forecast. Today + tomorrow are combined into one forward curve and past hours are ignored, so it works whatever time it runs.",
+          "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor (e.g. ..._forecast_tomorrow). The brain ALWAYS needs tomorrow too — the overnight low point falls tomorrow morning, where the recharge curve lives. You can usually leave this blank: if your today sensor is named ..._today, the matching ..._tomorrow is detected automatically. Set it only if your naming differs.",
           "hard_min_entity": "Optional: your Victron minimum-SoC number. Used only to clamp the target — the brain never controls SoC itself.",
           "scan_minutes": "How often Home Assistant re-asks the brain. Every recompute adapts to the latest SoC, load and forecast."
         }

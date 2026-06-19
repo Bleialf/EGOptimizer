@@ -7,6 +7,12 @@ services:
       - "8787:8787"
     volumes:
       - egoptimizer_data:/app/data     # Docker-managed named volume (Portainer-friendly)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
 
 # Named volume holds the SQLite db + trained model. No host folders, no CSVs on
 # disk -- upload your exports via  POST /import  (or the HA service). Portainer

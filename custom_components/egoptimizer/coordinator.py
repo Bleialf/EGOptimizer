@@ -88,13 +88,24 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         hard_min = self._num(self._hard_min)
         if hard_min is not None:
             payload["hard_min_soc_pct"] = hard_min
-        # Concatenate today + tomorrow hourly forecasts so the forward
-        # simulation always has PV from now until the morning trough, no
-        # matter what time of day it runs. The brain ignores past slots.
-        slots = self._solcast_slots(self._solcast) + self._solcast_slots(self._solcast_tomorrow)
+        # The brain ALWAYS needs the forward curve = today's remaining hours +
+        # tomorrow's (the overnight trough's morning recharge lives in
+        # tomorrow). Concatenate both every call; the brain ignores past slots.
+        tomorrow = self._solcast_tomorrow or self._auto_tomorrow()
+        slots = self._solcast_slots(self._solcast) + self._solcast_slots(tomorrow)
         if slots:
             payload["pv_forecast"] = slots
         return payload
+
+    def _auto_tomorrow(self) -> str | None:
+        """Guess the 'tomorrow' sensor from the 'today' one if not set explicitly.
+
+        Solcast names them ..._forecast_today / ..._forecast_tomorrow, so a user
+        who only picks 'today' still gets tomorrow's recharge automatically.
+        """
+        if self._solcast and "today" in self._solcast:
+            return self._solcast.replace("today", "tomorrow")
+        return None
 
     def _solcast_slots(self, entity_id: str | None) -> list:
         if not entity_id:
