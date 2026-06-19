@@ -30,3 +30,17 @@ jobs:
           # 'brands' requires submitting an icon to home-assistant/brands, a
           # separate process not needed for installing as a custom repository.
           ignore: brands
+
+  integration-imports:
+    # Import every integration module against a real Home Assistant so a bad
+    # import path (e.g. DeviceInfo) or invalid selector fails CI, not your box.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Home Assistant
+        run: pip install homeassistant
+      - name: Import integration modules
+        run: python scripts/check_integration_imports.py
