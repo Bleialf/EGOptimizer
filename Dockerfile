@@ -2,6 +2,9 @@
 # Phases 1-3 need only the Python standard library, so the image is tiny.
 FROM python:3.12-slim
 
+# Unbuffered stdout/stderr so `docker logs` / Portainer show logs live.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 COPY brain/ ./brain/
 
