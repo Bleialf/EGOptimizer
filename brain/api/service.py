@@ -98,10 +98,13 @@ def recommend(
     context_obs = 0
     cur_cap = None
     cur_stats = None
+    decision_path = "no_budget"
+    model_bucket_count = len(model.buckets) if model is not None else 0
 
     if res.eg_budget_kwh <= 0:
         feed_kw, status = 0.0, "no_budget"
         note = "No budget after autarky reserve -> feed 0."
+        decision_path = "budget_blocked"
     elif model is not None and model.buckets:
         # Phase 3: spend the budget where the community absorbs most. "explore"
         # probes higher to learn; "locked" feeds the learned uptake (no overshoot).
@@ -125,6 +128,7 @@ def recommend(
             confidence = "confident"
         # feed_kw == 0 now means the EG doesn't absorb this hour (e.g. daytime).
         status = "feeding" if feed_kw > 0 else "holding"
+        decision_path = "learned_plan"
         note = (
             f"Learned plan ({mode}): feed {feed_kw:.2f} kW this hour "
             + {"probing": "(PROBING above known uptake to learn).",
@@ -138,6 +142,7 @@ def recommend(
         hrs = max(1, len(hours_until(now, trough_dt)))
         feed_kw = min(res.eg_budget_kwh / hrs, bat["max_discharge_kw"])
         status, confidence = ("feeding" if feed_kw > 0 else "holding"), "no_model"
+        decision_path = "fallback_no_model"
         note = f"No model yet; flat spread of {res.eg_budget_kwh:.1f} kWh until the trough."
 
     # When/when's the next planned feed, for a clear "what happens next".
@@ -165,12 +170,23 @@ def recommend(
         "soc_forecast": _downsample(res.trajectory.points),
         # Structured trace of WHY this decision happened -- for debugging.
         "debug": {
+            "decision": {
+                "path": decision_path,
+                "status": status,
+                "confidence": confidence,
+                "note": note,
+            },
             "inputs": {
                 "soc_pct": soc, "capacity_kwh": capacity, "load_kw": round(load_kw, 3),
                 "target_morning_soc_pct": res.effective_target_pct,
                 "hard_min_soc_pct": hard_min, "mode": mode,
                 "exploration_aggressiveness": aggressiveness,
                 "plan_until": res.trough_time,   # feed across now -> trough
+            },
+            "model": {
+                "loaded": model is not None,
+                "bucket_count": model_bucket_count,
+                "has_current_bucket": bool(model is not None and bucket_key(now) in model.buckets),
             },
             "autarky": {
                 "eg_budget_kwh": res.eg_budget_kwh,

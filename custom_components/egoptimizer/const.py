@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "egoptimizer"
-PLATFORMS = ["sensor", "number", "select"]
+PLATFORMS = ["sensor", "number", "select", "button"]
 
 # config entry keys
 CONF_BRAIN_URL = "brain_url"

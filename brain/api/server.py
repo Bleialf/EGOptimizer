@@ -54,7 +54,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
-            self._send(200, {"status": "ok", "version": Handler.server_version})
+            model = CapacityModel.load(_MODEL_PATH)
+            self._send(
+                200,
+                {
+                    "status": "ok",
+                    "version": Handler.server_version,
+                    "model_path": _MODEL_PATH,
+                    "model_loaded": model is not None,
+                    "model_buckets": len(model.buckets) if model is not None else 0,
+                },
+            )
         elif self.path.startswith("/decisions"):
             with Store(_DB_PATH) as store:
                 rows = store.conn.execute(
@@ -78,9 +88,23 @@ class Handler(BaseHTTPRequestHandler):
                 model = CapacityModel.load(_MODEL_PATH)  # None until first train
                 with Store(_DB_PATH) as store:
                     result = recommend(state, _CONFIG, store, model)
+                dbg = result.get("debug") or {}
+                model_dbg = dbg.get("model") or {}
+                inputs_dbg = dbg.get("inputs") or {}
+                decision_dbg = dbg.get("decision") or {}
                 logger.info(
-                    "POST /recommend -> feed=%.2f kW, status=%s, confidence=%s",
-                    result.get("feed_kw", 0), result.get("status"), result.get("confidence"),
+                    "POST /recommend -> feed=%.2f kW, budget=%.2f kWh, status=%s, confidence=%s, "
+                    "path=%s, model_loaded=%s, buckets=%s, soc=%.1f%%, target=%.1f%%, load=%.3f kW",
+                    result.get("feed_kw", 0),
+                    result.get("eg_budget_kwh", 0),
+                    result.get("status"),
+                    result.get("confidence"),
+                    decision_dbg.get("path"),
+                    model_dbg.get("loaded"),
+                    model_dbg.get("bucket_count"),
+                    float(inputs_dbg.get("soc_pct", 0.0)),
+                    float(inputs_dbg.get("target_morning_soc_pct", 0.0)),
+                    float(inputs_dbg.get("load_kw", 0.0)),
                 )
                 self._send(200, result)
 
