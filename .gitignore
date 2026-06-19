@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# local data + secrets
+data/*.sqlite
+data/*.sqlite-*
+data/model.json
+brain/config.yaml
+
+# raw CSV exports contain your metering-point id + consumption pattern -- keep
+# them private (anywhere in the repo, including the root)
+*.csv
+
+# local tooling / editor state -- not part of the public project
+.claude/

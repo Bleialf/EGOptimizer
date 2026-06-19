@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EGOptimizer",
+        "description": "Connect Home Assistant to your EGOptimizer brain. min SoC is enforced by Victron; this only feeds energy above your morning target.",
+        "data": {
+          "brain_url": "Brain URL (e.g. http://192.168.1.50:8787)",
+          "capacity_kwh": "Usable battery capacity (kWh)",
+          "soc_entity": "Battery SoC sensor (%)",
+          "load_entity": "House load sensor (W, smoothed recommended)",
+          "solcast_entity": "Solcast forecast sensor (with detailedHourly)",
+          "hard_min_entity": "Victron minimum SoC (optional)",
+          "scan_minutes": "Recompute interval (minutes)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This brain URL is already configured."
+    }
+  }
+}

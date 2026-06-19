@@ -1,0 +1,21 @@
+services:
+  egoptimizer:
+    build: .
+    image: egoptimizer:latest
+    container_name: egoptimizer
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/app/data                 # CSVs, sqlite db, model.json
+      # - ./brain/config.yaml:/app/brain/config.yaml:ro   # optional overrides
+
+  # Nightly retrain from whatever has been imported. Runs, trains, exits;
+  # the host scheduler (or `docker compose run`) invokes it. Uncomment to use
+  # a sidecar cron, or just run `docker compose run --rm train` from cron.
+  train:
+    image: egoptimizer:latest
+    profiles: ["tools"]
+    volumes:
+      - ./data:/app/data
+    command: ["python", "-m", "brain.model.train"]

@@ -1,0 +1,16 @@
+# Phase 1 (ingest + analysis) is pure stdlib -- nothing required to run it.
+# The packages below are for later phases; install when you reach them.
+
+# config
+pyyaml>=6.0
+
+# analysis / model (Phase 2-3)
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.4      # censored-aware regression, baselines
+
+# forecasts (Phase 2)
+requests>=2.31         # Solcast API
+
+# HA output (Phase 3+)
+paho-mqtt>=2.0

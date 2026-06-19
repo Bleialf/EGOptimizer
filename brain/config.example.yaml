@@ -1,0 +1,50 @@
+# EGOptimizer configuration (copy to config.yaml and edit).
+# Phase 1 only reads `storage`. The rest is scaffolding for later phases so
+# the shape is stable.
+
+storage:
+  db_path: data/egoptimizer.sqlite
+
+# Your battery + inverter. Capacity is static config; SoC/PV/load are LIVE
+# inputs read at decision time (Phase 2+), not from NetzNOE.
+battery:
+  capacity_kwh: 10.0          # usable capacity -- EDIT
+  max_charge_kw: 5.0          # EDIT
+  max_discharge_kw: 5.0       # EDIT
+  inverter: sma               # sma | victron | huawei  -- EDIT (pick yours)
+  # Modbus/HA connection details added when we wire Phase 4 control.
+
+# Highest priority: never compromise own supply.
+autarky:
+  target_morning_soc_pct: 50  # YOUR knob: keep >= this SoC by morning (HA slider overrides)
+  hard_min_soc_pct: 10        # Victron's physical floor; only clamps the target
+  morning_hour: 7             # when "morning" is; reserve guarantees target by here
+  night_load_kw: 0.4          # fallback overnight draw; HA sends live load_now_kw instead
+
+# PV forecast source (Phase 2).
+solcast:
+  api_key: ""                 # EDIT
+  resource_ids: []            # your Solcast rooftop site id(s)
+
+# Learning + exploration (Phase 3).
+model:
+  mode: explore               # "explore" = probe above uptake to learn;
+                              # "locked"  = feed exactly the learned uptake (no overshoot).
+                              # Train in explore, then flip to locked (here or an HA switch).
+  exploration: ucb
+  exploration_aggressiveness: 0.15  # how hard to probe while exploring
+  path: data/model.json
+
+# Output to Home Assistant (Phase 3+).
+mqtt:
+  host: ""                    # EDIT (your MQTT broker / HA add-on)
+  port: 1883
+  username: ""
+  password: ""
+  discovery_prefix: homeassistant
+
+# Data providers to ingest. Add operators here as plugins are added.
+providers:
+  - name: netznoe
+    enabled: true
+    # fetch: manual    # NetzNOE has no API yet -> import CSV exports by hand

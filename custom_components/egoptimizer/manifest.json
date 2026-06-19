@@ -1,0 +1,12 @@
+{
+  "domain": "egoptimizer",
+  "name": "EGOptimizer",
+  "version": "0.3.0",
+  "documentation": "https://github.com/OWNER/EGOptimizer",
+  "issue_tracker": "https://github.com/OWNER/EGOptimizer/issues",
+  "codeowners": ["@OWNER"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "integration_type": "service",
+  "requirements": []
+}
