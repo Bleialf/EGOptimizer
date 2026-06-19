@@ -1,0 +1,42 @@
+import_csv:
+  name: Import CSV
+  description: >
+    Upload a grid-operator CSV export to the EGOptimizer brain (no folders
+    needed). Provide a file path readable by Home Assistant, or paste the CSV
+    content directly.
+  fields:
+    path:
+      name: File path
+      description: Path to a CSV file accessible to Home Assistant (e.g. /config/egexport.csv).
+      example: /config/AT00...-Jahreseinspeisung-2026.csv
+      selector:
+        text:
+    content:
+      name: CSV content
+      description: Alternatively, paste the raw CSV text.
+      selector:
+        text:
+          multiline: true
+    filename:
+      name: Filename
+      description: Original export filename (the metering-point id is read from it).
+      example: AT00...-Jahreseinspeisung-2026.csv
+      selector:
+        text:
+    provider:
+      name: Provider
+      description: Data provider format.
+      default: netznoe
+      selector:
+        select:
+          options: [netznoe]
+    train:
+      name: Train after import
+      description: Refit the model once the data is imported.
+      default: true
+      selector:
+        boolean:
+
+train:
+  name: Train model
+  description: Refit the EGOptimizer absorption model from all imported data.

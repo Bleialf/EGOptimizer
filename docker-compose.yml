@@ -1,23 +1,15 @@
 services:
   egoptimizer:
-    # Use the published image, or comment `image:` and uncomment `build: .`
-    # to build locally.
     image: ghcr.io/bleialf/egoptimizer:latest
-    # build: .
     container_name: egoptimizer
     restart: unless-stopped
     ports:
       - "8787:8787"
     volumes:
-      - ./data:/app/data                 # CSVs, sqlite db, model.json
-      # - ./brain/config.yaml:/app/brain/config.yaml:ro   # optional overrides
+      - egoptimizer_data:/app/data     # Docker-managed named volume (Portainer-friendly)
 
-  # Nightly retrain from whatever has been imported. Runs, trains, exits;
-  # the host scheduler (or `docker compose run`) invokes it. Uncomment to use
-  # a sidecar cron, or just run `docker compose run --rm train` from cron.
-  train:
-    image: ghcr.io/bleialf/egoptimizer:latest
-    profiles: ["tools"]
-    volumes:
-      - ./data:/app/data
-    command: ["python", "-m", "brain.model.train"]
+# Named volume holds the SQLite db + trained model. No host folders, no CSVs on
+# disk -- upload your exports via  POST /import  (or the HA service). Portainer
+# manages this volume under Volumes.
+volumes:
+  egoptimizer_data:

@@ -14,9 +14,8 @@ import argparse
 from pathlib import Path
 
 from brain.config import load_config
-from brain.ingest.clean import filter_outliers
-from brain.providers import available, get_provider
-from brain.storage import Store
+from brain.ingest.importer import import_path
+from brain.providers import available
 
 DEFAULT_DB = Path("data/egoptimizer.sqlite")
 
@@ -41,18 +40,15 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         ap.error(f"file(s) not found: {', '.join(map(str, missing))}")
 
-    provider = get_provider(args.provider)
     max_interval = load_config()["ingest"]["max_interval_kwh"]
-    total, total_dropped = 0, 0
-    with Store(args.db) as store:
-        for f in files:
-            kept, dropped = filter_outliers(provider.parse(f), max_interval)
-            written = store.upsert_many(kept)
-            total += written
-            total_dropped += len(dropped)
-            extra = f" ({len(dropped)} outlier(s) dropped)" if dropped else ""
-            print(f"  {f.name}: {written} intervals{extra}")
-        s = store.summary()
+    total, total_dropped, s = 0, 0, {}
+    for f in files:
+        r = import_path(f, args.provider, args.db, max_interval)
+        total += r["imported"]
+        total_dropped += r["dropped"]
+        s = r["store"]
+        extra = f" ({r['dropped']} outlier(s) dropped)" if r["dropped"] else ""
+        print(f"  {f.name}: {r['imported']} intervals{extra}")
     if total_dropped:
         print(f"Dropped {total_dropped} implausible interval(s) > {max_interval} kWh/15min.")
 

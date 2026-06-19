@@ -64,22 +64,30 @@ owns the orchestration). The brain is a small, dependency-free Python service.
 Two parts: the **brain** (a small service, runs anywhere) and the **Home
 Assistant integration** that talks to it.
 
-### 1. Run the brain (Docker — easiest)
+### 1. Run the brain (Docker / Portainer)
+
+No host folders, no CSVs on disk — state lives in a Docker-managed named volume:
 
 ```bash
-mkdir -p egoptimizer/data && cd egoptimizer
-# drop your NetzNÖ CSV export(s) into ./data
+docker volume create egoptimizer_data
 docker run -d --name egoptimizer -p 8787:8787 \
-  -v "$PWD/data:/app/data" --restart unless-stopped \
+  -v egoptimizer_data:/app/data --restart unless-stopped \
   ghcr.io/bleialf/egoptimizer:latest
-
-# import history, then train the model (re-run after new exports)
-docker exec egoptimizer python -m brain.ingest.run_import --all-in data/
-docker exec egoptimizer python -m brain.model.train
 ```
 
+In **Portainer**: Stacks → Add stack → paste [docker-compose.yml](docker-compose.yml) → deploy.
+
 Check it: `curl http://localhost:8787/health` → `{"status": "ok"}`.
-Schedule the import + train nightly (cron / HA automation) to keep learning.
+
+**Upload your data** (instead of placing files in a folder) — and train in one call:
+
+```bash
+curl -X POST "http://localhost:8787/import?filename=$(basename EXPORT.csv)&train=1" \
+     --data-binary @EXPORT.csv
+```
+
+…or from Home Assistant call the **`egoptimizer.import_csv`** service (below).
+Re-upload new exports any time; imports dedup and retrain.
 
 ### 2. Install the Home Assistant integration (HACS)
 
@@ -112,17 +120,13 @@ python -m brain.analysis.evaluate                  # backtest: capture vs spill
 python -m brain.api.server                         # serve POST /recommend on :8787
 ```
 
-Or with Docker — pull the pre-built image from GitHub Container Registry:
-
-```bash
-docker pull ghcr.io/bleialf/egoptimizer:latest
-docker run -d -p 8787:8787 -v "$PWD/data:/app/data" ghcr.io/bleialf/egoptimizer:latest
-# or simply:  docker compose up -d
-```
-
-The image is built and published automatically by GitHub Actions on every push
-to `main` and on version tags (`vX.Y.Z`) — see
+Or with Docker (named volume, no host folders) — see [Installation](#installation)
+above. The image is built and published automatically by GitHub Actions on every
+push to `main` and on version tags (`vX.Y.Z`) — see
 [.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml).
+
+Endpoints: `POST /recommend`, `POST /import` (upload a CSV), `POST /train`,
+`GET /health`, `GET /decisions`.
 
 ## Home Assistant
 

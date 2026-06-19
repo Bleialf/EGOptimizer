@@ -20,16 +20,19 @@ import argparse
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from brain.api.service import recommend
 from brain.config import load_config
+from brain.ingest.importer import import_bytes
 from brain.model.capacity import CapacityModel
+from brain.model.train import train_model
 from brain.storage import Store
 
 _CONFIG = load_config()
 _DB_PATH = _CONFIG["storage"]["db_path"]
 _MODEL_PATH = _CONFIG.get("model", {}).get("path", "data/model.json")
+_MAX_INTERVAL = _CONFIG["ingest"]["max_interval_kwh"]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -56,17 +59,43 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
+    def _body(self) -> bytes:
+        length = int(self.headers.get("Content-Length", 0))
+        return self.rfile.read(length) if length else b""
+
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/recommend":
-            self._send(404, {"error": "not found"})
-            return
+        route = urlsplit(self.path)
+        params = {k: v[0] for k, v in parse_qs(route.query).items()}
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            state = json.loads(self.rfile.read(length) or b"{}")
-            model = CapacityModel.load(_MODEL_PATH)  # None until first train
-            with Store(_DB_PATH) as store:
-                result = recommend(state, _CONFIG, store, model)
-            self._send(200, result)
+            if route.path == "/recommend":
+                state = json.loads(self._body() or b"{}")
+                model = CapacityModel.load(_MODEL_PATH)  # None until first train
+                with Store(_DB_PATH) as store:
+                    self._send(200, recommend(state, _CONFIG, store, model))
+
+            elif route.path == "/import":
+                # Upload a CSV instead of dropping it in a folder. Filename
+                # matters (meter id is parsed from it) -> pass ?filename= or
+                # the X-Filename header.
+                filename = params.get("filename") or self.headers.get("X-Filename", "upload.csv")
+                provider = params.get("provider", "netznoe")
+                result = import_bytes(self._body(), filename, provider, _DB_PATH, _MAX_INTERVAL)
+                if params.get("train") in ("1", "true", "yes"):
+                    result["train"] = train_model(
+                        _DB_PATH, _MODEL_PATH,
+                        _CONFIG["model"]["exploration_aggressiveness"],
+                        _CONFIG["model"]["mode"],
+                    )
+                self._send(200, result)
+
+            elif route.path == "/train":
+                self._send(200, train_model(
+                    _DB_PATH, _MODEL_PATH,
+                    _CONFIG["model"]["exploration_aggressiveness"],
+                    _CONFIG["model"]["mode"],
+                ))
+            else:
+                self._send(404, {"error": "not found"})
         except Exception as exc:  # keep the loop alive; report cleanly
             self._send(400, {"error": str(exc)})
 
@@ -81,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"EGOptimizer recommend API on http://{args.host}:{args.port}  (db: {_DB_PATH})")
-    print("  POST /recommend   GET /health   GET /decisions")
+    print(f"EGOptimizer API on http://{args.host}:{args.port}  (db: {_DB_PATH})")
+    print("  POST /recommend   POST /import   POST /train   GET /health   GET /decisions")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

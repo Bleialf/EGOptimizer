@@ -35,7 +35,8 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry
         data = {**entry.data, **entry.options}
-        self._url = data[CONF_BRAIN_URL].rstrip("/") + "/recommend"
+        self.base_url = data[CONF_BRAIN_URL].rstrip("/")
+        self._url = self.base_url + "/recommend"
         self._capacity = float(data[CONF_CAPACITY_KWH])
         self._soc = data[CONF_SOC_ENTITY]
         self._load = data.get(CONF_LOAD_ENTITY)
