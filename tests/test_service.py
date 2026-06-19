@@ -93,26 +93,40 @@ class TestRecommend(unittest.TestCase):
                       self.cfg, self.store)
         self.assertEqual(r["target_morning_soc_pct"], 10.0)
 
-    def test_decision_is_logged_without_trajectory(self):
+    def test_decision_is_logged_without_big_arrays(self):
         recommend(self._state(), self.cfg, self.store)
         row = self.store.conn.execute(
             "SELECT response FROM decisions ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        self.assertNotIn("soc_forecast", row["response"])  # trajectory not persisted
+        self.assertNotIn("soc_forecast", row["response"])  # not persisted
+        self.assertNotIn("feed_plan", row["response"])      # not persisted
 
     def test_soc_forecast_present_in_response(self):
         r = recommend(self._state(), self.cfg, self.store)
         self.assertTrue(r["soc_forecast"])
         self.assertIn("soc_pct", r["soc_forecast"][0])
 
+    def test_status_and_confidence_no_model(self):
+        # No model loaded -> flat spread, confidence reports no_model.
+        r = recommend(self._state(), self.cfg, self.store, model=None)
+        self.assertEqual(r["confidence"], "no_model")
+        self.assertIn(r["status"], ("feeding", "holding", "no_budget"))
+
+    def test_no_budget_status(self):
+        r = recommend(self._state(soc_pct=45), self.cfg, self.store)  # below target
+        self.assertEqual(r["status"], "no_budget")
+        self.assertEqual(r["feed_kw"], 0.0)
+
     def test_works_without_store(self):
         self.assertIn("feed_kw", recommend(self._state(), self.cfg, store=None))
 
     def test_response_schema(self):
         r = recommend(self._state(), self.cfg, self.store)
-        for k in ("version", "decided_at", "feed_kw", "eg_budget_kwh",
+        for k in ("version", "decided_at", "feed_kw", "status", "confidence",
+                  "explore", "mode", "eg_budget_kwh", "planned_tonight_kwh",
+                  "context_observations", "next_feed_time",
                   "target_morning_soc_pct", "trough_soc_pct", "trough_time",
-                  "pv_takeover_time", "load_kw", "explore", "rationale",
+                  "pv_takeover_time", "load_kw", "rationale", "feed_plan",
                   "soc_forecast"):
             self.assertIn(k, r)
 

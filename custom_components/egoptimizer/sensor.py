@@ -28,9 +28,16 @@ SENSORS: tuple[EGSensor, ...] = (
     EGSensor(key="feed_kw", name="Feed setpoint", icon="mdi:transmission-tower-export",
              native_unit_of_measurement=UnitOfPower.KILO_WATT,
              device_class=SensorDeviceClass.POWER, value=lambda d: d.get("feed_kw")),
+    EGSensor(key="status", name="Status", icon="mdi:state-machine",
+             value=lambda d: d.get("status")),
+    EGSensor(key="confidence", name="Confidence", icon="mdi:head-question-outline",
+             value=lambda d: d.get("confidence")),
     EGSensor(key="eg_budget_kwh", name="EG budget tonight", icon="mdi:battery-arrow-up",
              native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
              value=lambda d: d.get("eg_budget_kwh")),
+    EGSensor(key="planned_tonight_kwh", name="Planned tonight", icon="mdi:calendar-clock",
+             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+             value=lambda d: d.get("planned_tonight_kwh")),
     EGSensor(key="trough_soc_pct", name="Forecast trough SoC", icon="mdi:battery-low",
              native_unit_of_measurement=PERCENTAGE, value=lambda d: d.get("trough_soc_pct")),
     EGSensor(key="trough_time", name="Trough time", icon="mdi:clock-alert-outline",
@@ -62,7 +69,16 @@ class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        data = self.coordinator.data or {}
         if self.entity_description.key == "feed_kw":
-            return {"explore": (self.coordinator.data or {}).get("explore"),
-                    "soc_forecast": (self.coordinator.data or {}).get("soc_forecast")}
+            # Everything a dashboard / debugging needs hangs off the headline sensor.
+            return {
+                "explore": data.get("explore"),
+                "mode": data.get("mode"),
+                "context_observations": data.get("context_observations"),
+                "next_feed_time": data.get("next_feed_time"),
+                "feed_plan": data.get("feed_plan"),
+                "soc_forecast": data.get("soc_forecast"),
+                "debug": data.get("debug"),
+            }
         return None

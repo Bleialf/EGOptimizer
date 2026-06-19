@@ -139,4 +139,85 @@ Once you trust the numbers, an automation maps `input_number.egopt_feed_kw` to
 the Victron ESS grid setpoint (e.g. `number.victron_ess_grid_setpoint` or a
 DVCC/ESS control). Until then, the dashboard is advisory -- you keep setting the
 feed-in yourself, and the system learns from what the EG absorbs.
+
+---
+
+# Visualizing with the HACS integration
+
+When installed via HACS, the integration creates these entities (no helpers
+needed):
+
+| Entity | What |
+|--------|------|
+| `sensor.egoptimizer_feed_setpoint` | **the headline kW to feed right now** |
+| `sensor.egoptimizer_status` | feeding / holding / no_budget |
+| `sensor.egoptimizer_confidence` | probing / confident / locked / no_model |
+| `sensor.egoptimizer_eg_budget_tonight`, `..._planned_tonight` | energy (kWh) |
+| `sensor.egoptimizer_forecast_trough_soc`, `..._trough_time`, `..._pv_takeover_time` | autarky |
+| `sensor.egoptimizer_reasoning` | plain-language why |
+| `number.egoptimizer_target_morning_soc` | your morning-SoC slider |
+| `select.egoptimizer_learning_mode` | explore ⇄ locked switch |
+
+The full **feed plan**, **SoC forecast**, and **debug trace** ride as attributes
+on `sensor.egoptimizer_feed_setpoint`.
+
+## Dashboard
+
+```yaml
+type: vertical-stack
+cards:
+  - type: gauge
+    name: Feed into EG now
+    entity: sensor.egoptimizer_feed_setpoint
+    min: 0
+    max: 5
+    needle: true
+    severity: { green: 0.01, yellow: 0, red: 4 }
+  - type: glance
+    entities:
+      - { entity: sensor.egoptimizer_status, name: Status }
+      - { entity: sensor.egoptimizer_confidence, name: Confidence }
+      - { entity: sensor.egoptimizer_eg_budget_tonight, name: Budget }
+      - { entity: sensor.egoptimizer_planned_tonight, name: Planned }
+      - { entity: sensor.egoptimizer_forecast_trough_soc, name: Trough SoC }
+  - type: entities
+    entities:
+      - number.egoptimizer_target_morning_soc
+      - select.egoptimizer_learning_mode
+  - type: markdown
+    content: "**Why:** {{ state_attr('sensor.egoptimizer_feed_setpoint','debug') }}"
+```
+
+## Charts (ApexCharts card — install via HACS Frontend)
+
+**Predicted overnight SoC curve** (with your morning target as a reference):
+
+```yaml
+type: custom:apexcharts-card
+header: { show: true, title: Forecast battery SoC }
+series:
+  - entity: sensor.egoptimizer_feed_setpoint
+    name: SoC %
+    data_generator: |
+      return (entity.attributes.soc_forecast || [])
+        .map(p => [new Date(p.t).getTime(), p.soc_pct]);
+```
+
+**The hour-by-hour feed plan** (probe hours stand out as the taller bars):
+
+```yaml
+type: custom:apexcharts-card
+chart_type: column
+header: { show: true, title: Tonight's feed plan (kWh/h) }
+series:
+  - entity: sensor.egoptimizer_feed_setpoint
+    name: Feed kWh
+    data_generator: |
+      return (entity.attributes.feed_plan || [])
+        .map(p => [new Date(p.time).getTime(), p.feed_kwh]);
+```
+
+Because everything is an attribute on one sensor, you can also dump the raw
+`debug` object in a Markdown card while tuning -- it shows the budget math, the
+trough, and the learned stats for the current context bucket.
 ```

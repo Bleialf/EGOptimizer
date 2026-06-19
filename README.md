@@ -59,6 +59,44 @@ owns the orchestration). The brain is a small, dependency-free Python service.
   that gathers state, calls the brain, and exposes the result as sensors you can
   automate and chart.
 
+## Installation
+
+Two parts: the **brain** (a small service, runs anywhere) and the **Home
+Assistant integration** that talks to it.
+
+### 1. Run the brain (Docker — easiest)
+
+```bash
+mkdir -p egoptimizer/data && cd egoptimizer
+# drop your NetzNÖ CSV export(s) into ./data
+docker run -d --name egoptimizer -p 8787:8787 \
+  -v "$PWD/data:/app/data" --restart unless-stopped \
+  ghcr.io/bleialf/egoptimizer:latest
+
+# import history, then train the model (re-run after new exports)
+docker exec egoptimizer python -m brain.ingest.run_import --all-in data/
+docker exec egoptimizer python -m brain.model.train
+```
+
+Check it: `curl http://localhost:8787/health` → `{"status": "ok"}`.
+Schedule the import + train nightly (cron / HA automation) to keep learning.
+
+### 2. Install the Home Assistant integration (HACS)
+
+1. **HACS → ⋮ → Custom repositories** → add `https://github.com/Bleialf/EGOptimizer`,
+   category **Integration**.
+2. Search **EGOptimizer** in HACS, **Download**, then **restart** Home Assistant.
+3. **Settings → Devices & Services → Add Integration → EGOptimizer**.
+4. Enter your **brain URL** (e.g. `http://192.168.x.x:8787`), battery capacity,
+   and pick your **SoC**, **house-load**, and **Solcast** entities.
+
+That's it — you'll get the `sensor.egoptimizer_feed_setpoint` value, a target-SoC
+slider, an explore/locked switch, and the data for the dashboard in
+[docs/homeassistant.md](docs/homeassistant.md).
+
+> No HACS / prefer YAML? The same result via `rest_command` + automation is in
+> [docs/homeassistant.md](docs/homeassistant.md).
+
 ## Quickstart (brain, zero dependencies)
 
 Phase 1–3 run on the Python standard library alone.

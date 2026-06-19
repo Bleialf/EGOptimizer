@@ -23,6 +23,7 @@ from datetime import datetime
 
 from brain.forecast.reserve import ReserveInputs, compute_reserve
 from brain.model.capacity import CapacityModel
+from brain.model.context import bucket_key
 from brain.model.schedule import feed_now_kw, plan_feed
 from brain.storage import Store
 
@@ -102,47 +103,105 @@ def recommend(
 
     start_h, end_h = int(win["start_hour"]), int(win["end_hour"])
     hours_left = _hours_left_in_window(now, start_h, end_h)
+    mode = state.get("mode") or config["model"].get("mode", "explore")
     explore = False
+    feed_plan: list[dict] = []
+    confidence = "no_model"
+    context_obs = 0
+    cur_cap = None
+    cur_stats = None
 
     if res.eg_budget_kwh <= 0:
-        feed_kw, note = 0.0, "No budget after autarky reserve -> feed 0."
+        feed_kw, status = 0.0, "no_budget"
+        note = "No budget after autarky reserve -> feed 0."
     elif hours_left <= 0:
-        feed_kw, note = 0.0, "Outside feed window -> hold (EG saturated in daytime)."
+        feed_kw, status = 0.0, "holding"
+        note = "Outside feed window -> hold (EG saturated in daytime)."
     elif model is not None and model.buckets:
-        # Phase 3: spend the budget where the community absorbs most. Mode comes
-        # from the request (an HA switch) or config: "explore" probes higher to
-        # learn; "locked" feeds exactly the learned typical uptake (no overshoot).
-        mode = state.get("mode") or config["model"].get("mode", "explore")
+        # Phase 3: spend the budget where the community absorbs most. "explore"
+        # probes higher to learn; "locked" feeds the learned uptake (no overshoot).
         plan = plan_feed(res.eg_budget_kwh, now, start_h, end_h, model,
                          bat["max_discharge_kw"], mode=mode)
+        feed_plan = [
+            {"time": p.ts.isoformat(timespec="minutes"), "hour": p.hour,
+             "feed_kwh": p.feed_kwh, "capacity_kwh": p.capacity_kwh, "explore": p.explore}
+            for p in plan
+        ]
         feed_kwh, explore = feed_now_kw(plan, now)
         feed_kw = min(feed_kwh, bat["max_discharge_kw"])
+        # How confident are we about THIS hour's context?
+        cur_cap, _, cur_stats = model.recommend_capacity(now, mode=mode)
+        context_obs = cur_stats.n if cur_stats else 0
+        if mode == "locked":
+            confidence = "locked"
+        elif explore:
+            confidence = "probing"
+        else:
+            confidence = "confident"
+        status = "feeding" if feed_kw > 0 else "holding"
         note = (
-            f"Learned plan ({mode}): feed {feed_kw:.2f} kW this hour"
-            + (" (PROBING above known uptake)." if explore else " (feeding known uptake).")
+            f"Learned plan ({mode}): feed {feed_kw:.2f} kW this hour "
+            + {"probing": "(PROBING above known uptake to learn).",
+               "confident": "(confident: feeding the known ceiling).",
+               "locked": "(locked: feeding exactly the learned uptake)."}[confidence]
         )
     else:
         # Phase 2 fallback when no model is trained yet: flat spread.
         feed_kw = min(res.eg_budget_kwh / hours_left, bat["max_discharge_kw"])
+        status, confidence = ("feeding" if feed_kw > 0 else "holding"), "no_model"
         note = f"No model yet; flat spread of {res.eg_budget_kwh:.1f} kWh over {hours_left:.1f} h."
+
+    # When/when's the next planned feed, for a clear "what happens next".
+    next_feed = next((p["time"] for p in feed_plan if p["feed_kwh"] > 0), None)
+
     response = {
         "version": VERSION,
         "decided_at": now.isoformat(timespec="minutes"),
-        "feed_kw": round(feed_kw, 3),
+        "feed_kw": round(feed_kw, 3),               # <-- the headline value
+        "status": status,                            # feeding | probing-via confidence | holding | no_budget
+        "confidence": confidence,                    # probing | confident | locked | no_model
+        "explore": explore,                          # bool: are we overfeeding to learn right now?
+        "mode": mode,
         "eg_budget_kwh": res.eg_budget_kwh,
+        "planned_tonight_kwh": round(sum(p["feed_kwh"] for p in feed_plan), 3),
+        "context_observations": context_obs,         # how much data backs this hour
+        "next_feed_time": next_feed,
         "target_morning_soc_pct": res.effective_target_pct,
         "trough_soc_pct": res.trough_soc_pct,
         "trough_time": res.trough_time,
         "pv_takeover_time": res.pv_takeover_time,
         "load_kw": round(load_kw, 3),
-        "explore": explore,
         "rationale": f"{res.rationale} {note}",
+        "feed_plan": feed_plan,                      # full hour-by-hour schedule
         "soc_forecast": _downsample(res.trajectory.points),
+        # Structured trace of WHY this decision happened -- for debugging.
+        "debug": {
+            "inputs": {
+                "soc_pct": soc, "capacity_kwh": capacity, "load_kw": round(load_kw, 3),
+                "target_morning_soc_pct": res.effective_target_pct,
+                "hard_min_soc_pct": hard_min, "mode": mode,
+                "in_feed_window": hours_left > 0, "hours_left_in_window": round(hours_left, 2),
+            },
+            "autarky": {
+                "eg_budget_kwh": res.eg_budget_kwh,
+                "trough_soc_pct": res.trough_soc_pct, "trough_time": res.trough_time,
+                "pv_takeover_time": res.pv_takeover_time,
+                "reserve_note": res.rationale,
+            },
+            "context": {
+                "bucket": bucket_key(now),
+                "observations": context_obs,
+                "max_absorbed_kwh": getattr(cur_stats, "max_absorbed", None),
+                "mean_absorbed_kwh": round(cur_stats.mean_absorbed, 4) if cur_stats else None,
+                "best_was_censored": getattr(cur_stats, "max_was_censored", None),
+                "recommended_capacity_kwh": cur_cap,
+            },
+        },
     }
 
     if store is not None:
-        # don't persist the (large) trajectory in the decision log
-        logged = {k: v for k, v in response.items() if k != "soc_forecast"}
+        # don't persist the (large) arrays in the decision log
+        logged = {k: v for k, v in response.items() if k not in ("soc_forecast", "feed_plan")}
         store.log_decision(
             decided_at=response["decided_at"],
             request=json.dumps(state, default=str),
