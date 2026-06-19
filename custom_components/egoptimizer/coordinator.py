@@ -62,14 +62,27 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             ),
         )
 
-    def _num(self, entity_id: str | None, scale: float = 1.0) -> float | None:
+    def _num(
+        self,
+        entity_id: str | None,
+        scale: float = 1.0,
+        *,
+        power_to_kw: bool = False,
+    ) -> float | None:
         if not entity_id:
             return None
         st = self.hass.states.get(entity_id)
         if st is None or st.state in ("unknown", "unavailable", None, ""):
             return None
         try:
-            return float(st.state) * scale
+            value = float(st.state) * scale
+            if power_to_kw:
+                unit = str(st.attributes.get("unit_of_measurement") or "").strip().lower()
+                if unit in ("w", "watt", "watts"):
+                    return value / 1000.0
+                if unit in ("mw", "megawatt", "megawatts"):
+                    return value * 1000.0
+            return value
         except (ValueError, TypeError):
             return None
 
@@ -82,7 +95,7 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             "mode": self.mode,
             "exploration_aggressiveness": self.aggressiveness,
         }
-        load = self._num(self._load)
+        load = self._num(self._load, power_to_kw=True)
         if load is not None:
             payload["load_now_kw"] = load
         hard_min = self._num(self._hard_min)
