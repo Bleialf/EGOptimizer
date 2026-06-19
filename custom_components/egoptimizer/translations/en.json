@@ -1,22 +1,114 @@
 {
+  "title": "EGOptimizer",
   "config": {
     "step": {
       "user": {
-        "title": "EGOptimizer",
-        "description": "Connect Home Assistant to your EGOptimizer brain. min SoC is enforced by Victron; this only feeds energy above your morning target.",
+        "title": "Connect to your EGOptimizer brain",
+        "description": "EGOptimizer decides how much solar energy to feed into your energy community without ever risking your own autarky. Home Assistant sends live state to the brain and shows its recommendation. Your battery's minimum SoC stays enforced by Victron — the brain only ever spends energy above your morning target.",
         "data": {
-          "brain_url": "Brain URL (e.g. http://192.168.1.50:8787)",
+          "brain_url": "Brain URL",
           "capacity_kwh": "Usable battery capacity (kWh)",
-          "soc_entity": "Battery SoC sensor (%)",
-          "load_entity": "House load sensor (W, smoothed recommended)",
-          "solcast_entity": "Solcast forecast sensor (with detailedHourly)",
+          "soc_entity": "Battery state-of-charge sensor",
+          "load_entity": "House power draw sensor",
+          "solcast_entity": "Solcast forecast sensor",
           "hard_min_entity": "Victron minimum SoC (optional)",
-          "scan_minutes": "Recompute interval (minutes)"
+          "scan_minutes": "Recompute interval"
+        },
+        "data_description": {
+          "brain_url": "Address of the brain container, e.g. http://192.168.1.50:8787.",
+          "capacity_kwh": "Your battery's usable capacity. Used to convert percentages to kWh.",
+          "soc_entity": "Current battery charge in %. Required — this drives every calculation.",
+          "load_entity": "Live household consumption (W). Prefer a smoothed/averaged sensor so a kettle switching on doesn't jerk the plan. The brain uses it to estimate overnight load.",
+          "solcast_entity": "A Solcast PV-forecast sensor exposing the hourly 'detailedHourly' attribute. The brain reads tomorrow's pessimistic (P10) curve to know when PV will recharge the battery.",
+          "hard_min_entity": "Optional: your Victron minimum-SoC number. Used only to clamp the target — the brain never controls SoC itself.",
+          "scan_minutes": "How often Home Assistant re-asks the brain. Every recompute adapts to the latest SoC, load and forecast."
         }
       }
     },
     "abort": {
       "already_configured": "This brain URL is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EGOptimizer",
+        "description": "Manage your EGOptimizer.",
+        "menu_options": {
+          "upload_data": "Upload data (CSV exports)",
+          "settings": "Settings (connection, battery, entities)",
+          "delete_data": "Delete old data"
+        }
+      },
+      "upload_data": {
+        "title": "Upload a CSV export",
+        "description": "Upload your grid-operator export (e.g. NetzNÖ 'Jahreseinspeisung'). The brain imports it (de-duplicating, dropping meter glitches) and learns from it — no folders needed. Tick 'upload another' to add more files in a row; the model retrains once you finish. Files uploaded so far this session: {count}.",
+        "data": {
+          "file": "CSV file",
+          "upload_another": "Upload another file after this one"
+        },
+        "data_description": {
+          "file": "A .csv export. The original filename matters — your metering-point id is read from it.",
+          "upload_another": "Leave on to keep adding files; turn off to finish and retrain."
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Connection, battery and the entities the brain reads. When to feed is decided automatically by what the community absorbs (learned) and your battery simulation — there is no fixed time window to set.",
+        "data": {
+          "brain_url": "Brain URL",
+          "capacity_kwh": "Usable battery capacity (kWh)",
+          "soc_entity": "Battery state-of-charge sensor",
+          "load_entity": "House power draw sensor",
+          "solcast_entity": "Solcast forecast sensor",
+          "hard_min_entity": "Victron minimum SoC (optional)",
+          "scan_minutes": "Recompute interval",
+          "retention_days": "Keep data for (days)"
+        },
+        "data_description": {
+          "capacity_kwh": "Your battery's usable capacity in kWh.",
+          "soc_entity": "Battery charge in % — required.",
+          "load_entity": "Smoothed household consumption (W). The plan adapts to it every recompute.",
+          "solcast_entity": "Solcast sensor with the hourly 'detailedHourly' attribute (P10 used).",
+          "hard_min_entity": "Optional Victron minimum-SoC number, used only to clamp the target.",
+          "scan_minutes": "How often to recompute (minutes).",
+          "retention_days": "Default retention used by 'Delete old data'. 0 keeps everything."
+        }
+      },
+      "delete_data": {
+        "title": "Delete old data",
+        "description": "Permanently remove imported intervals older than the retention period from the brain's database. This cannot be undone. The learning model is unaffected until its next retrain.",
+        "data": {
+          "retention_days": "Keep the most recent (days)",
+          "confirm": "Yes, delete older data"
+        },
+        "data_description": {
+          "retention_days": "Everything older than this many days is deleted. 0 would delete everything — use with care.",
+          "confirm": "You must tick this to proceed."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Couldn't reach the brain. Check the URL and that the container is running.",
+      "upload_failed": "Couldn't read the uploaded file. Try again.",
+      "not_confirmed": "Tick the confirm box to delete data."
+    }
+  },
+  "services": {
+    "import_csv": {
+      "name": "Import CSV",
+      "description": "Upload a grid-operator CSV export to the brain (alternative to the UI).",
+      "fields": {
+        "path": { "name": "File path", "description": "Path to a CSV readable by Home Assistant." },
+        "content": { "name": "CSV content", "description": "Or paste the raw CSV text." },
+        "filename": { "name": "Filename", "description": "Original export filename (metering-point id is read from it)." },
+        "provider": { "name": "Provider", "description": "Data format (e.g. netznoe)." },
+        "train": { "name": "Train after import", "description": "Refit the model once imported." }
+      }
+    },
+    "train": {
+      "name": "Train model",
+      "description": "Refit the absorption model from all imported data."
     }
   }
 }

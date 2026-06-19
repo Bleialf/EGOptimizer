@@ -11,6 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    CONF_AGGRESSIVENESS,
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
     CONF_HARD_MIN_ENTITY,
@@ -20,6 +21,7 @@ from .const import (
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
     CONF_TARGET_MORNING_SOC,
+    DEFAULT_AGGRESSIVENESS,
     DEFAULT_MODE,
     DEFAULT_SCAN_MINUTES,
     DEFAULT_TARGET_MORNING_SOC,
@@ -47,6 +49,7 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             data.get(CONF_TARGET_MORNING_SOC, DEFAULT_TARGET_MORNING_SOC)
         )
         self.mode = data.get(CONF_MODE, DEFAULT_MODE)
+        self.aggressiveness = float(data.get(CONF_AGGRESSIVENESS, DEFAULT_AGGRESSIVENESS))
 
         super().__init__(
             hass,
@@ -75,6 +78,7 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             "capacity_kwh": self._capacity,
             "target_morning_soc_pct": self.target_morning_soc,
             "mode": self.mode,
+            "exploration_aggressiveness": self.aggressiveness,
         }
         load = self._num(self._load)
         if load is not None:

@@ -7,7 +7,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from brain.api.service import _hours_left_in_window, recommend
+from brain.api.service import recommend
 from brain.config import load_config
 from brain.storage import Store
 
@@ -16,17 +16,6 @@ SUNNY = [{"period_start": f"{DAY}T{h:02d}:00:00", "pv_estimate10": v}
          for h, v in {8: 1.2, 9: 2.5, 10: 3.5, 11: 4.0, 12: 4.0}.items()]
 CLOUDY = [{"period_start": f"{DAY}T{h:02d}:00:00", "pv_estimate10": v}
           for h, v in {9: 0.3, 10: 0.45, 11: 0.7, 12: 1.0}.items()]
-
-
-class TestFeedWindow(unittest.TestCase):
-    def test_inside_overnight_window(self):
-        self.assertAlmostEqual(_hours_left_in_window(datetime(2026, 5, 20, 22, 0), 19, 7), 9.0)
-
-    def test_after_midnight_still_in_window(self):
-        self.assertAlmostEqual(_hours_left_in_window(datetime(2026, 5, 21, 2, 0), 19, 7), 5.0)
-
-    def test_daytime_outside_window(self):
-        self.assertEqual(_hours_left_in_window(datetime(2026, 5, 20, 14, 0), 19, 7), 0.0)
 
 
 class TestRecommend(unittest.TestCase):

@@ -87,6 +87,20 @@ class TestStore(unittest.TestCase):
         self.assertEqual(s["n"], 2)
         self.assertEqual(s["settled"], 1)
 
+    def test_delete_before_purges_old_rows(self):
+        self.store.upsert_many([
+            _rec(datetime(2025, 7, 24, 12, 0), 1.0, 0.5, 0.5),
+            _rec(datetime(2026, 1, 1, 12, 0), 1.0, 0.5, 0.5),
+            _rec(datetime(2026, 6, 1, 12, 0), 1.0, 0.5, 0.5),
+        ])
+        removed = self.store.delete_before("2026-01-01T00:00:00")
+        self.assertEqual(removed, 1)                       # only the 2025 row
+        self.assertEqual(self.store.summary()["n"], 2)
+
+    def test_delete_before_nothing_to_delete(self):
+        self.store.upsert_many([_rec(datetime(2026, 6, 1, 12, 0), 1.0, 0.5, 0.5)])
+        self.assertEqual(self.store.delete_before("2020-01-01T00:00:00"), 0)
+
     def test_decision_log(self):
         rid = self.store.log_decision(
             decided_at="2026-05-20T22:00", request="{}", response="{}",

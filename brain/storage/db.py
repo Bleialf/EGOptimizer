@@ -124,6 +124,12 @@ class Store:
         sql += " ORDER BY ts"
         return [self._row_to_record(r) for r in self.conn.execute(sql, params)]
 
+    def delete_before(self, cutoff_iso: str) -> int:
+        """Delete energy records with ts < cutoff (ISO). Returns rows removed."""
+        cur = self.conn.execute("DELETE FROM energy_records WHERE ts < ?", (cutoff_iso,))
+        self.conn.commit()
+        return cur.rowcount
+
     def summary(self) -> dict:
         row = self.conn.execute(
             """

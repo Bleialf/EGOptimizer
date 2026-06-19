@@ -18,9 +18,14 @@ CONF_SCAN_MINUTES = "scan_minutes"
 CONF_TARGET_MORNING_SOC = "target_morning_soc_pct"
 CONF_MODE = "mode"
 
+CONF_RETENTION_DAYS = "retention_days"
+CONF_AGGRESSIVENESS = "exploration_aggressiveness"
+
 DEFAULT_SCAN_MINUTES = 15
 DEFAULT_TARGET_MORNING_SOC = 50.0
 DEFAULT_MODE = "explore"
+DEFAULT_RETENTION_DAYS = 1095          # ~3 years; 0 = keep everything
+DEFAULT_AGGRESSIVENESS = 0.15
 MODES = ["explore", "locked"]
 
 # Solcast detailedHourly attribute (varies by integration version).

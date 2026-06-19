@@ -37,14 +37,9 @@ DEFAULTS: dict = {
         # past tomorrow's PV ramp (a cloudy morning pushes the trough later).
         "sim_horizon_h": 24.0,
     },
-    "feed_window": {
-        # Hours (local) during which feeding the EG is allowed at all. Outside
-        # this, recommend 0 (daytime community is saturated -> energy spills,
-        # so hold it for autarky instead). Phase 3 replaces this static window
-        # with the learned absorption schedule.
-        "start_hour": 19,
-        "end_hour": 7,
-    },
+    # No fixed feed window: timing comes from the learned per-hour absorption
+    # model (where the EG actually takes energy) bounded by the autarky trough
+    # (feed only while the battery is heading to its low point).
     "api": {"host": "0.0.0.0", "port": 8787},
     "model": {
         # "explore": probe above known uptake to keep learning (overfeed a bit).

@@ -109,7 +109,7 @@ class CapacityModel:
 
     # ---- inference ------------------------------------------------------
     def recommend_capacity(
-        self, ts: datetime, mode: str | None = None
+        self, ts: datetime, mode: str | None = None, aggressiveness: float | None = None
     ) -> tuple[float, bool, BucketStats | None]:
         """Recommended feed ceiling (kWh for that hour) and whether it's a probe.
 
@@ -129,9 +129,10 @@ class CapacityModel:
 
         if b is None or b.n == 0:
             return COLD_START_PROBE_KWH, True, b  # unknown context -> small probe
+        aggr = self.aggressiveness if aggressiveness is None else aggressiveness
         unsure = b.max_was_censored or b.n < MIN_CONFIDENT_OBS
         if unsure:
-            cap = b.max_absorbed * (1.0 + self.aggressiveness)
+            cap = b.max_absorbed * (1.0 + aggr)
             # ensure a probe even when best-seen was tiny/zero but censored
             cap = max(cap, b.max_absorbed + COLD_START_PROBE_KWH)
             return round(cap, 4), True, b

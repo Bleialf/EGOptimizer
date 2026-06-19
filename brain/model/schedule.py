@@ -26,43 +26,38 @@ class HourPlan:
     explore: bool
 
 
-def _window_hours(now: datetime, start_h: int, end_h: int) -> list[datetime]:
-    """The remaining whole hours inside the feed window, from `now` forward."""
-    wraps = start_h > end_h
-    hours = []
+def hours_until(now: datetime, until: datetime, cap_hours: int = 48) -> list[datetime]:
+    """Whole hours from `now` up to (not past) `until`.
+
+    No fixed clock window: we feed across whatever hours run from now until the
+    battery's trough (after which PV is recharging). The model decides which of
+    those hours actually get energy -- daytime hours simply carry ~0 capacity.
+    """
     t = now.replace(minute=0, second=0, microsecond=0)
-    for _ in range(24):
-        h = t.hour
-        inside = (h >= start_h or h < end_h) if wraps else (start_h <= h < end_h)
-        if inside and t >= now.replace(minute=0, second=0, microsecond=0):
+    hours: list[datetime] = []
+    while t < until and len(hours) < cap_hours:
+        if t + timedelta(hours=1) > now:   # this hour still has time left
             hours.append(t)
         t += timedelta(hours=1)
-        if len(hours) >= 24:
-            break
-    # stop at the first exit from the window after we've entered it
-    trimmed = []
-    for t in hours:
-        h = t.hour
-        inside = (h >= start_h or h < end_h) if wraps else (start_h <= h < end_h)
-        if inside:
-            trimmed.append(t)
-    return trimmed
+    if not hours:                          # at/just before the trough -> feed now
+        hours = [now.replace(minute=0, second=0, microsecond=0)]
+    return hours
 
 
 def plan_feed(
     budget_kwh: float,
     now: datetime,
-    start_h: int,
-    end_h: int,
+    until: datetime,
     model: CapacityModel,
     max_per_hour_kwh: float,
     mode: str | None = None,
+    aggressiveness: float | None = None,
 ) -> list[HourPlan]:
-    """Allocate `budget_kwh` across the window's hours by UCB capacity."""
-    hours = _window_hours(now, start_h, end_h)
+    """Allocate `budget_kwh` across the hours up to the trough, by UCB capacity."""
+    hours = hours_until(now, until)
     caps = []
     for t in hours:
-        cap, explore, _ = model.recommend_capacity(t, mode=mode)
+        cap, explore, _ = model.recommend_capacity(t, mode=mode, aggressiveness=aggressiveness)
         caps.append((t, min(cap, max_per_hour_kwh), explore))
 
     # Greedy water-fill: give the most to the hours that can absorb the most.

@@ -96,11 +96,18 @@ Re-upload new exports any time; imports dedup and retrain.
 2. Search **EGOptimizer** in HACS, **Download**, then **restart** Home Assistant.
 3. **Settings → Devices & Services → Add Integration → EGOptimizer**.
 4. Enter your **brain URL** (e.g. `http://192.168.x.x:8787`), battery capacity,
-   and pick your **SoC**, **house-load**, and **Solcast** entities.
+   and pick your **SoC**, **house-load**, and **Solcast** entities. Every field
+   has an inline explanation.
+5. On the integration, click **Configure** to:
+   - **Upload data** — drag in your CSV export(s) right in the UI (no folders, no
+     Developer Tools); the model retrains automatically.
+   - **Settings** — change connection, battery, entities, retention.
+   - **Delete old data** — purge intervals older than your retention period.
 
-That's it — you'll get the `sensor.egoptimizer_feed_setpoint` value, a target-SoC
-slider, an explore/locked switch, and the data for the dashboard in
-[docs/homeassistant.md](docs/homeassistant.md).
+That's it — you'll get the `sensor.egoptimizer_feed_setpoint` value, sliders for
+target-SoC and exploration, an explore/locked switch, and the dashboard in
+[docs/homeassistant.md](docs/homeassistant.md). When to feed is decided by the
+learned absorption model + battery simulation — there's no time window to set.
 
 > No HACS / prefer YAML? The same result via `rest_command` + automation is in
 > [docs/homeassistant.md](docs/homeassistant.md).

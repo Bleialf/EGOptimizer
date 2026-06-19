@@ -13,7 +13,7 @@ from brain.model.capacity import (
     aggregate_hourly,
 )
 from brain.model.context import bucket_key, daytype, season
-from brain.model.schedule import _window_hours, feed_now_kw, plan_feed
+from brain.model.schedule import feed_now_kw, hours_until, plan_feed
 from brain.records import EnergyRecord
 
 
@@ -138,31 +138,37 @@ class TestSchedule(unittest.TestCase):
             recs.append(_rec(datetime(2026, 1, d, 23, 0), 1.0, 0.3, 0.7))  # cap ~0.3
         self.model = CapacityModel().fit(recs)
 
-    def test_window_hours_overnight(self):
-        hrs = _window_hours(datetime(2026, 1, 5, 22, 0), 19, 7)
+    NOW = datetime(2026, 1, 5, 22, 0)      # Monday evening
+    UNTIL = datetime(2026, 1, 6, 7, 0)     # trough next morning
+
+    def test_hours_until_spans_now_to_trough(self):
+        hrs = hours_until(self.NOW, self.UNTIL)
         self.assertEqual(hrs[0].hour, 22)
-        self.assertTrue(all(h.hour >= 19 or h.hour < 7 for h in hrs))
+        self.assertTrue(all(h < self.UNTIL for h in hrs))
+        self.assertNotIn(14, [h.hour for h in hrs])  # no fixed window, just the range
+
+    def test_hours_until_at_trough_returns_current_hour(self):
+        hrs = hours_until(self.NOW, self.NOW)   # already at the trough
+        self.assertEqual(len(hrs), 1)
 
     def test_waterfill_respects_budget(self):
-        plan = plan_feed(1.0, datetime(2026, 1, 5, 22, 0), 19, 7, self.model, 5.0)
+        plan = plan_feed(1.0, self.NOW, self.UNTIL, self.model, 5.0)
         self.assertLessEqual(sum(p.feed_kwh for p in plan), 1.0 + 1e-6)
 
     def test_waterfill_prefers_high_capacity_hour(self):
         # Small budget should go to the 22:00 (high-capacity) hour first.
-        plan = plan_feed(1.0, datetime(2026, 1, 5, 22, 0), 19, 7, self.model, 5.0)
+        plan = plan_feed(1.0, self.NOW, self.UNTIL, self.model, 5.0)
         by_hour = {p.hour: p.feed_kwh for p in plan}
         self.assertGreater(by_hour[22], by_hour.get(23, 0.0))
 
     def test_feed_now_kw_matches_current_hour(self):
-        now = datetime(2026, 1, 5, 22, 0)
-        plan = plan_feed(1.0, now, 19, 7, self.model, 5.0)
-        kw, _ = feed_now_kw(plan, now)
+        plan = plan_feed(1.0, self.NOW, self.UNTIL, self.model, 5.0)
+        kw, _ = feed_now_kw(plan, self.NOW)
         self.assertGreater(kw, 0.0)
 
     def test_feed_now_kw_zero_off_plan(self):
-        now = datetime(2026, 1, 5, 22, 0)
-        plan = plan_feed(1.0, now, 19, 7, self.model, 5.0)
-        kw, explore = feed_now_kw(plan, datetime(2026, 1, 5, 14, 0))  # daytime, not in plan
+        plan = plan_feed(1.0, self.NOW, self.UNTIL, self.model, 5.0)
+        kw, explore = feed_now_kw(plan, datetime(2026, 1, 5, 14, 0))  # not in plan range
         self.assertEqual(kw, 0.0)
 
 

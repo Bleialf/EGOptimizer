@@ -20,6 +20,7 @@ import argparse
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 from brain.api.service import recommend
@@ -94,6 +95,17 @@ class Handler(BaseHTTPRequestHandler):
                     _CONFIG["model"]["exploration_aggressiveness"],
                     _CONFIG["model"]["mode"],
                 ))
+
+            elif route.path == "/purge":
+                # Delete old data: ?before=ISO  or  ?keep_days=N
+                before = params.get("before")
+                if not before:
+                    keep_days = int(params.get("keep_days", 730))
+                    before = (datetime.now() - timedelta(days=keep_days)).isoformat()
+                with Store(_DB_PATH) as store:
+                    removed = store.delete_before(before)
+                    summary = store.summary()
+                self._send(200, {"deleted": removed, "before": before, "store": summary})
             else:
                 self._send(404, {"error": "not found"})
         except Exception as exc:  # keep the loop alive; report cleanly
@@ -111,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"EGOptimizer API on http://{args.host}:{args.port}  (db: {_DB_PATH})")
-    print("  POST /recommend   POST /import   POST /train   GET /health   GET /decisions")
+    print("  POST /recommend  /import  /train  /purge    GET /health  /decisions")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
