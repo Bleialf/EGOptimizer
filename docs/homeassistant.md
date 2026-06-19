@@ -170,10 +170,10 @@ automation:
           entity_id: number.victron_ess_grid_setpoint  # <- your entity
         data:
           # Victron grid setpoint is negative watts for exporting
-          value: "{{ (states('sensor.egoptimizer_feed_setpoint') | float(0) * -1000) | round(0) }}"
+          value: "{{ (states('sensor.egoptimizer_feed_setpoint') | float(0) * -1) | round(0) }}"
 ```
 
-(Multiply by -1000: Victron uses negative watts for feeding to grid.)
+(Multiply by -1: the feed setpoint sensor is already in watts.)
 
 ---
 
@@ -184,7 +184,7 @@ needed):
 
 | Entity | What |
 |--------|------|
-| `sensor.egoptimizer_feed_setpoint` | **the headline kW to feed right now** |
+| `sensor.egoptimizer_feed_setpoint` | **the headline W to feed right now** |
 | `sensor.egoptimizer_status` | feeding / holding / no_budget |
 | `sensor.egoptimizer_confidence` | probing / confident / locked / no_model |
 | `sensor.egoptimizer_eg_budget_tonight`, `..._planned_tonight` | energy (kWh) |
@@ -205,9 +205,9 @@ cards:
     name: Feed into EG now
     entity: sensor.egoptimizer_feed_setpoint
     min: 0
-    max: 5
+    max: 5000
     needle: true
-    severity: { green: 0.01, yellow: 0, red: 4 }
+    severity: { green: 10, yellow: 0, red: 4000 }
   - type: glance
     entities:
       - { entity: sensor.egoptimizer_status, name: Status }

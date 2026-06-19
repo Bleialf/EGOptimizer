@@ -26,8 +26,10 @@ class EGSensor(SensorEntityDescription):
 
 SENSORS: tuple[EGSensor, ...] = (
     EGSensor(key="feed_kw", name="Feed setpoint", icon="mdi:transmission-tower-export",
-             native_unit_of_measurement=UnitOfPower.KILO_WATT,
-             device_class=SensorDeviceClass.POWER, value=lambda d: d.get("feed_kw")),
+             native_unit_of_measurement=UnitOfPower.WATT,
+             device_class=SensorDeviceClass.POWER,
+             value=lambda d: (round(float(d.get("feed_kw")) * 1000.0, 0)
+                              if d.get("feed_kw") is not None else None)),
     EGSensor(key="status", name="Status", icon="mdi:state-machine",
              value=lambda d: d.get("status")),
     EGSensor(key="confidence", name="Confidence", icon="mdi:head-question-outline",

@@ -62,7 +62,7 @@ trigger:
 
 action:
   - variables:
-      feed_kw: "{{ (states(trigger.entity_id) | float(0)) }}"
+      feed_w: "{{ (states(trigger.entity_id) | float(0)) }}"
       max_export: !input max_export_kw
       mode: "{{ states(trigger.entity_id + '.mode') | default('') }}"
       status: "{{ states(trigger.entity_id + '.status') | default('') }}"
@@ -122,12 +122,12 @@ action:
             data:
               value: 0
 
-      # Default: set gridsetpoint = -1000 × feed_kw (in watts)
+      # Default: set gridsetpoint = -feed_w (already in watts)
       # Negative because Victron uses negative for exporting to grid
       - sequence:
           - service: number.set_value
             target:
               entity_id: !input victron_gridsetpoint_entity
             data:
-              # Clamp to max_export, convert kW to W (× 1000), negate
-              value: "{{ (min(feed_kw, max_export) * -1000) | round(0) }}"
+              # Clamp to max_export (kW converted to W), then negate for export.
+              value: "{{ (min(feed_w, max_export * 1000) * -1) | round(0) }}"
