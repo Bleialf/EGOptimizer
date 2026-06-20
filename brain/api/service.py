@@ -188,31 +188,31 @@ def recommend(
     # When/when's the next planned feed, for a clear "what happens next".
     next_feed = next((p["time"] for p in feed_plan if p["feed_kwh"] > 0), None)
 
-    # Plain-language "what it's doing" sentence (shown on the dashboard).
+    # Plain-language "what it's doing" sentence. Kept well under HA's 255-char
+    # sensor-state limit so it never gets truncated on the dashboard.
     _hhmm = lambda iso: iso[11:16] if iso and len(iso) >= 16 else "—"
     target = res.effective_target_pct
-    low = (f"the battery bottoms out near {res.trough_soc_pct:.0f}% around "
-           f"{_hhmm(res.trough_time)}, "
-           + (f"then solar covers the house from {_hhmm(res.pv_takeover_time)}"
-              if res.pv_takeover_time else "and solar doesn't catch up within the forecast"))
+    solar = (f"solar takes over at {_hhmm(res.pv_takeover_time)}"
+             if res.pv_takeover_time else "no solar recovery in forecast")
+    low = f"lowest ~{res.trough_soc_pct:.0f}% at {_hhmm(res.trough_time)}, then {solar}"
     probe_phrase = {
-        "probing": " (testing a bit above the known amount, to learn)",
-        "confident": " (the amount we know they take)",
+        "probing": " (testing a bit higher to learn)",
+        "confident": " (the known amount)",
         "locked": " (locked to the learned amount)",
         "no_model": "",
     }.get(confidence, "")
 
     if status == "feeding":
-        reasoning = (f"Giving {feed_kw:.2f} kW to the community now{probe_phrase}. "
-                     f"Plan for tonight: {planned_total:.1f} kWh total, while keeping the "
-                     f"battery at least {target:.0f}% by morning — {low}.")
+        reasoning = (f"Giving {feed_kw:.2f} kW now{probe_phrase}. Tonight: "
+                     f"{planned_total:.1f} kWh total, keeping the battery at least "
+                     f"{target:.0f}% by morning — {low}.")
     elif status == "no_budget":
-        reasoning = (f"Nothing to give right now — keeping the battery at least "
-                     f"{target:.0f}% by morning leaves no spare: {low}.")
+        reasoning = (f"Nothing to give — staying at least {target:.0f}% by morning "
+                     f"leaves no spare ({low}).")
     else:  # holding
-        reasoning = (f"Waiting this hour — the community absorbs almost nothing now. "
-                     f"{planned_total:.1f} kWh is planned for better hours, keeping the "
-                     f"battery at least {target:.0f}% by morning — {low}.")
+        reasoning = (f"Waiting — the community takes almost nothing this hour. "
+                     f"{planned_total:.1f} kWh planned for later, keeping at least "
+                     f"{target:.0f}% by morning ({low}).")
 
     response = {
         "version": VERSION,
