@@ -18,13 +18,15 @@ from brain.storage import Store
 
 
 def train_model(
-    db: Path | str, out: Path | str, aggressiveness: float, mode: str = "explore"
+    db: Path | str, out: Path | str, aggressiveness: float, mode: str = "explore",
+    half_life_days: float = 45.0,
 ) -> dict:
     """Fit and save the model; return a summary (reused by the /train endpoint)."""
     records = Store(db).fetch_all()
-    model = CapacityModel(aggressiveness=aggressiveness, mode=mode).fit(records)
+    model = CapacityModel(aggressiveness=aggressiveness, mode=mode,
+                          half_life_days=half_life_days).fit(records)
     model.save(out)
-    n_explore = sum(1 for b in model.buckets.values() if b.max_was_censored or b.n < 5)
+    n_explore = sum(1 for b in model.buckets.values() if b.max_was_censored or b.weight < 5)
     return {
         "records": len(records),
         "buckets": len(model.buckets),
@@ -41,9 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--aggressiveness", type=float,
                     default=cfg["model"]["exploration_aggressiveness"])
     ap.add_argument("--mode", default=cfg["model"]["mode"])
+    ap.add_argument("--half-life-days", type=float,
+                    default=cfg["model"].get("learn_half_life_days", 45.0))
     args = ap.parse_args(argv)
 
-    r = train_model(args.db, args.out, args.aggressiveness, args.mode)
+    r = train_model(args.db, args.out, args.aggressiveness, args.mode, args.half_life_days)
     print(f"Trained on {r['records']} records -> {r['buckets']} context buckets.")
     print(f"  {r['uncertain_buckets']} buckets still uncertain (will probe higher).")
     print(f"  saved: {r['saved']}")

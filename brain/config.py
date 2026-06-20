@@ -51,6 +51,11 @@ DEFAULTS: dict = {
         "mode": "explore",
         "exploration": "ucb",
         "exploration_aggressiveness": 0.15,  # how hard to probe while exploring
+        # Recency half-life (days): a bucket's learned ceiling halves every this
+        # many days unless reconfirmed, and recent observations weigh more. Lets
+        # the model adapt UP and DOWN and re-explore contexts gone quiet.
+        # 0 = legacy all-time max (no forgetting).
+        "learn_half_life_days": 45.0,
         "path": "data/model.json",
     },
     "ingest": {

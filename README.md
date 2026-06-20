@@ -49,6 +49,44 @@ reinforcement learning for ~one decision per night):
 Home Assistant **calls** the brain (no HA credentials stored in the brain, HA
 owns the orchestration). The brain is a small, dependency-free Python service.
 
+## How the learning works (the reinforcement-learning bit)
+
+EGOptimizer is a **censored-aware contextual bandit** — the right size of RL for
+~one decision per night. There's no neural net and no gradient training; the
+"policy" is a per-context table the brain refits nightly.
+
+**Context.** Every hour is bucketed as `season | weekday-type | hour` (e.g.
+`summer | weekday | 22`). Absorption swings hugely across these — winter nights
+take almost everything, summer middays are saturated — so each bucket is learned
+separately.
+
+**The censored signal (the crux).** The grid-operator data only tells you how
+much the community absorbed *up to what you fed in*. Two cases per bucket:
+- **Fully absorbed** (no surplus) → you only learn the ceiling is *at least*
+  what you fed. The true ceiling is **unseen / censored**.
+- **Surplus left over** → the community took what it could and rejected the
+  rest, so you **saw the ceiling**.
+
+**Explore vs exploit (UCB-flavoured).**
+- Censored or too-few recent observations → **explore**: offer a bit *above* the
+  best seen (`known_max × (1 + aggressiveness)`) to discover the real ceiling.
+- Ceiling seen and enough recent data → **exploit**: aim right at it.
+- `locked` mode stops probing entirely and just feeds the learned typical uptake.
+
+**Reward & adaptation (v0.7).** Each night's outcome (absorbed vs. surplus)
+updates the bucket. Observations are **recency-weighted with a half-life** (default
+45 days): recent nights count more, and a bucket's ceiling **decays toward recent
+reality if it isn't reconfirmed** — so the model adapts **down** as well as up
+(e.g. if the community starts taking less), and a context that's gone quiet loses
+confidence and gets **re-explored**. Set the half-life to 0 for a non-forgetting
+all-time ceiling.
+
+**Autarky is not part of the reward** — it's a hard constraint applied *after*
+the bandit proposes capacities: a forward battery simulation guarantees the
+planned feed never drops your SoC below the morning target before PV takes over
+(see the planner). So the learner optimises EG uptake; the simulation keeps you
+safe.
+
 ## Architecture (hybrid)
 
 - **`brain/`** — the Docker service: provider plugins, ingestion, SQLite store,

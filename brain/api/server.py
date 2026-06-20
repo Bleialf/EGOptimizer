@@ -126,6 +126,7 @@ class Handler(BaseHTTPRequestHandler):
                         _DB_PATH, _MODEL_PATH,
                         _CONFIG["model"]["exploration_aggressiveness"],
                         _CONFIG["model"]["mode"],
+                        _CONFIG["model"].get("learn_half_life_days", 45.0),
                     )
                     logger.info(
                         "  trained: %s records, %s buckets",
@@ -139,6 +140,7 @@ class Handler(BaseHTTPRequestHandler):
                     _DB_PATH, _MODEL_PATH,
                     _CONFIG["model"]["exploration_aggressiveness"],
                     _CONFIG["model"]["mode"],
+                    _CONFIG["model"].get("learn_half_life_days", 45.0),
                 )
                 logger.info(
                     "  trained: %s records, %s buckets, %s uncertain",

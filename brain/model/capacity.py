@@ -36,15 +36,16 @@ COLD_START_PROBE_KWH = 0.2
 
 @dataclass
 class BucketStats:
-    n: int = 0                    # hourly observations with feed-in
-    max_absorbed: float = 0.0     # best uptake ever seen (kWh in an hour)
+    n: int = 0                    # raw hourly observations with feed-in (display)
+    max_absorbed: float = 0.0     # recency-DECAYED best uptake (kWh in an hour)
     max_was_censored: bool = False  # was that best fully absorbed (ceiling unseen)?
-    sum_absorbed: float = 0.0
+    sum_absorbed: float = 0.0     # recency-WEIGHTED sum of absorbed
     n_censored: int = 0
+    weight: float = 0.0           # sum of recency weights (effective recent obs)
 
     @property
     def mean_absorbed(self) -> float:
-        return self.sum_absorbed / self.n if self.n else 0.0
+        return self.sum_absorbed / self.weight if self.weight else 0.0
 
 
 @dataclass
@@ -82,9 +83,16 @@ def aggregate_hourly(records: list[EnergyRecord]) -> list[HourObs]:
 class CapacityModel:
     """Per-bucket absorption capacity with UCB exploration."""
 
-    def __init__(self, aggressiveness: float = 0.15, mode: str = "explore"):
+    def __init__(self, aggressiveness: float = 0.15, mode: str = "explore",
+                 half_life_days: float = 45.0):
         self.aggressiveness = aggressiveness
         self.mode = mode  # "explore" (probe to learn) | "locked" (feed what's taken)
+        # Recency half-life: an observation's weight halves every this-many days,
+        # and a bucket's ceiling DECAYS toward recent reality if not reconfirmed.
+        # So the model adapts UP and DOWN, weights recent days more, and lets a
+        # context that's gone quiet for a while become "unsure" -> re-explored.
+        # 0 disables decay (legacy all-time max).
+        self.half_life_days = half_life_days
         self.buckets: dict[str, BucketStats] = {}
 
     # ---- training -------------------------------------------------------
@@ -92,19 +100,41 @@ class CapacityModel:
         return self.fit_from_obs(aggregate_hourly(records))
 
     def fit_from_obs(self, observations: list[HourObs]) -> "CapacityModel":
-        """Fit from pre-aggregated hourly observations (used by the backtest)."""
+        """Fit from pre-aggregated hourly observations, recency-weighted.
+
+        Per bucket we track a recency-DECAYED ceiling (so an old high uptake
+        fades unless reconfirmed) and recency-weighted sums (recent days count
+        more). The reference 'now' is the latest observation.
+        """
         self.buckets = {}
-        for obs in observations:
-            if obs.feed_kwh <= 1e-6:
-                continue  # we never offered anything -> no info on capacity
-            b = self.buckets.setdefault(bucket_key(obs.ts), BucketStats())
-            b.n += 1
-            b.sum_absorbed += obs.absorbed_kwh
-            if obs.censored:
-                b.n_censored += 1
-            if obs.absorbed_kwh > b.max_absorbed:
-                b.max_absorbed = obs.absorbed_kwh
-                b.max_was_censored = obs.censored
+        fed = sorted((o for o in observations if o.feed_kwh > 1e-6), key=lambda o: o.ts)
+        if not fed:
+            return self
+        ref = fed[-1].ts
+        per_day = 0.5 ** (1.0 / self.half_life_days) if self.half_life_days > 0 else 1.0
+
+        grouped: dict[str, list[HourObs]] = defaultdict(list)
+        for o in fed:
+            grouped[bucket_key(o.ts)].append(o)
+
+        for key, obs_list in grouped.items():
+            b = BucketStats()
+            mx, mx_cens, last = 0.0, False, None
+            for o in obs_list:
+                if last is not None:                       # decay running ceiling
+                    mx *= per_day ** max(0, (o.ts - last).days)
+                if o.absorbed_kwh > mx:                     # new (or recovered) ceiling
+                    mx, mx_cens = o.absorbed_kwh, o.censored
+                last = o.ts
+                w = per_day ** max(0, (ref - o.ts).days)    # recency weight
+                b.n += 1
+                b.weight += w
+                b.sum_absorbed += w * o.absorbed_kwh
+                if o.censored:
+                    b.n_censored += 1
+            mx *= per_day ** max(0, (ref - last).days)       # fade if quiet since
+            b.max_absorbed, b.max_was_censored = round(mx, 4), mx_cens
+            self.buckets[key] = b
         return self
 
     # ---- inference ------------------------------------------------------
@@ -127,10 +157,13 @@ class CapacityModel:
                 return 0.0, False, b
             return round(b.mean_absorbed, 4), False, b
 
-        if b is None or b.n == 0:
-            return COLD_START_PROBE_KWH, True, b  # unknown context -> small probe
+        if b is None or b.weight <= 0:
+            return COLD_START_PROBE_KWH, True, b  # unknown/forgotten context -> probe
         aggr = self.aggressiveness if aggressiveness is None else aggressiveness
-        unsure = b.max_was_censored or b.n < MIN_CONFIDENT_OBS
+        # Confidence uses the EFFECTIVE recent observation count (sum of recency
+        # weights), so a bucket that's gone quiet decays back to "unsure" and is
+        # re-explored, and the ceiling can correct downward over time.
+        unsure = b.max_was_censored or b.weight < MIN_CONFIDENT_OBS
         if unsure:
             cap = b.max_absorbed * (1.0 + aggr)
             # ensure a probe even when best-seen was tiny/zero but censored
@@ -143,6 +176,7 @@ class CapacityModel:
         return {
             "aggressiveness": self.aggressiveness,
             "mode": self.mode,
+            "half_life_days": self.half_life_days,
             "buckets": {k: asdict(v) for k, v in self.buckets.items()},
         }
 
@@ -153,8 +187,12 @@ class CapacityModel:
 
     @classmethod
     def from_dict(cls, d: dict) -> "CapacityModel":
-        m = cls(aggressiveness=d.get("aggressiveness", 0.15), mode=d.get("mode", "explore"))
-        m.buckets = {k: BucketStats(**v) for k, v in d.get("buckets", {}).items()}
+        m = cls(aggressiveness=d.get("aggressiveness", 0.15), mode=d.get("mode", "explore"),
+                half_life_days=d.get("half_life_days", 45.0))
+        # tolerate older saved buckets without the recency fields
+        valid = {f.name for f in __import__("dataclasses").fields(BucketStats)}
+        m.buckets = {k: BucketStats(**{kk: vv for kk, vv in v.items() if kk in valid})
+                     for k, v in d.get("buckets", {}).items()}
         return m
 
     @classmethod
