@@ -118,6 +118,7 @@ sections:
         series:
           - entity: sensor.egoptimizer_feed_setpoint
             name: Exploit
+            unit: kWh
             yaxis_id: energy
             type: column
             color: "#2ecc71"
@@ -127,6 +128,7 @@ sections:
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: Explore (probe)
+            unit: kWh
             yaxis_id: energy
             type: column
             color: "#e67e22"
@@ -136,6 +138,7 @@ sections:
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: EG capacity ceiling
+            unit: kWh
             yaxis_id: energy
             type: line
             color: "#3498db"
@@ -203,6 +206,7 @@ sections:
         series:
           - entity: sensor.egoptimizer_feed_setpoint
             name: SoC forecast
+            unit: '%'
             yaxis_id: soc
             type: line
             color: "#2ecc71"
@@ -213,6 +217,7 @@ sections:
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: PV forecast
+            unit: kW
             yaxis_id: pv
             type: area
             color: "#f1c40f"
@@ -223,6 +228,7 @@ sections:
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: Target SoC
+            unit: '%'
             yaxis_id: soc
             type: line
             color: "#e74c3c"
