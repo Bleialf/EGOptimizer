@@ -37,6 +37,16 @@ DEFAULT_LOAD_AVG_MINUTES = 15          # rolling-average window for "load now"
 # simulated battery overnight.
 DEFAULT_BASE_LOAD_WINDOW_MINUTES = 180
 DEFAULT_BASE_LOAD_PERCENTILE = 25      # 0..100; lower = more feeding, higher = safer
+
+# Overnight base load is best taken from RECORDER HISTORY of the load sensor:
+# the chosen percentile of its hourly mean during the night window, over the
+# last N days. Restart-proof and reflects the real night draw (no warm-up).
+CONF_NIGHT_LOAD_OVERRIDE_KW = "night_load_override_kw"   # 0 = auto (use history)
+DEFAULT_NIGHT_LOAD_OVERRIDE_KW = 0.0
+NIGHT_START_HOUR = 0                   # local hour the "deep night" window starts
+NIGHT_END_HOUR = 6                     # ...and ends (exclusive)
+NIGHT_HISTORY_DAYS = 7                 # how far back to read for the estimate
+NIGHT_LOAD_REFRESH_MIN = 60            # recompute the history estimate at most hourly
 MODES = ["explore", "locked"]
 
 # How often (seconds) we sample the raw load into the rolling buffer.

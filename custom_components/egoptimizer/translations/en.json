@@ -69,6 +69,7 @@
           "load_average_minutes": "Smooth load over (minutes)",
           "base_load_window_minutes": "Base-load window (minutes)",
           "base_load_percentile": "Base-load percentile",
+          "night_load_override_kw": "Overnight base load override (kW, 0 = auto)",
           "retention_days": "Keep data for (days)"
         },
         "data_description": {
@@ -80,8 +81,9 @@
           "hard_min_entity": "Optional Victron minimum-SoC number, used only to clamp the target.",
           "scan_minutes": "How often to recompute (minutes).",
           "load_average_minutes": "The load sensor is sampled every 30 s and averaged over this window for the 'load now' figure — this stops a kettle/oven blip from jerking the feed setpoint. 15 min is a good default; set 0 to disable.",
-          "base_load_window_minutes": "Window used to estimate your SUSTAINED base load (the overnight draw the battery simulation uses). The brain plans the night around this, not the spiky instantaneous load. 180 min is a good default.",
-          "base_load_percentile": "Which percentile of the load over that window counts as 'base load'. 25 ≈ the quiet baseline (fridge/standby). Lower = assumes a lighter night → feeds more; higher = more conservative for autarky. Default 25.",
+          "base_load_window_minutes": "Only a fallback while history warms up: window of live samples used to guess the base load before recorder history is available. The real overnight figure comes from your load sensor's recorded night-hour history (00:00–06:00, last 7 days).",
+          "base_load_percentile": "Which percentile counts as 'base load' — applied to BOTH the live fallback and the recorded night-hour history. 25 ≈ the quiet baseline (fridge/standby). Lower = lighter night assumed → feeds more; higher = more conservative for autarky. Default 25.",
+          "night_load_override_kw": "Set your real overnight draw in kW to skip estimation entirely (e.g. 0.6). 0 = auto: estimate from recorder night-hour history, falling back to the live window. The 'Base load' sensor's 'source' attribute shows which is in use.",
           "retention_days": "Default retention used by 'Delete old data'. 0 keeps everything."
         }
       },

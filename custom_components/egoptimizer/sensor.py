@@ -151,4 +151,6 @@ class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
                 "feed_plan": data.get("feed_plan"),
                 "decision": _decision_info(data),
             }
+        if self.entity_description.key == "base_load":
+            return {"source": getattr(self.coordinator, "base_load_source", None)}
         return None
