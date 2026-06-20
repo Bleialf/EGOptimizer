@@ -1,0 +1,336 @@
+# EGOptimizer dashboard — paste into a dashboard view's "raw configuration".
+# Requires HACS frontend cards: apexcharts-card, mushroom, card-mod.
+#
+# NOTE on entity_ids: Home Assistant prefixed the entities created while the
+# device was in the "Technikraum" area (load sensors, buttons, current_plan)
+# but NOT the older ones. If your ids differ, fix them in Developer Tools →
+# States (all friendly names start with "EGOptimizer …").
+title: EGOptimizer
+path: egoptimizer
+icon: mdi:battery-charging-outline
+type: sections
+max_columns: 3
+sections:
+  - type: grid
+    cards:
+      - type: heading
+        heading: Now & Controls
+      - type: custom:mushroom-template-card
+        entity: sensor.egoptimizer_feed_setpoint
+        primary: >-
+          {{ (states('sensor.egoptimizer_feed_setpoint') | float(0) / -1000.0) | round(2) }} kW
+        secondary: Active export power (feed-in setpoint)
+        icon: mdi:transmission-tower-export
+        icon_color: "{{ 'green' if states('sensor.egoptimizer_feed_setpoint') | float(0) < 0 else 'grey' }}"
+        layout: horizontal
+      - type: custom:mushroom-chips-card
+        alignment: center
+        chips:
+          - type: template
+            entity: sensor.egoptimizer_status
+            icon: mdi:state-machine
+            icon_color: >-
+              {% set s = states('sensor.egoptimizer_status') %}
+              {% if s == 'feeding' %}green{% elif s == 'holding' %}amber{% else %}grey{% endif %}
+            content: "{{ states('sensor.egoptimizer_status') | title }}"
+          - type: template
+            entity: sensor.egoptimizer_confidence
+            icon: mdi:head-question-outline
+            icon_color: >-
+              {% set c = states('sensor.egoptimizer_confidence') %}
+              {% if c == 'probing' %}blue{% elif c == 'confident' %}green{% elif c == 'locked' %}purple{% else %}grey{% endif %}
+            content: "{{ states('sensor.egoptimizer_confidence') | title }}"
+      - type: markdown
+        content: >-
+          **Why:** {{ states('sensor.egoptimizer_reasoning') }}
+      - type: grid
+        square: false
+        columns: 3
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.egoptimizer_eg_budget_tonight
+            name: EG budget
+            icon_color: green
+          - type: custom:mushroom-entity-card
+            entity: sensor.egoptimizer_planned_tonight
+            name: Planned
+            icon_color: blue
+          - type: custom:mushroom-template-card
+            entity: sensor.egoptimizer_forecast_trough_soc
+            primary: "{{ states('sensor.egoptimizer_forecast_trough_soc') }}%"
+            secondary: >-
+              Trough {% set t = states('sensor.egoptimizer_trough_time') %}{{ as_datetime(t).strftime('%H:%M') if as_datetime(t) is not none else 'N/A' }}
+            icon: mdi:battery-low
+            icon_color: amber
+          - type: custom:mushroom-template-card
+            entity: sensor.egoptimizer_pv_takeover_time
+            primary: >-
+              {% set t = states('sensor.egoptimizer_pv_takeover_time') %}{{ as_datetime(t).strftime('%H:%M') if as_datetime(t) is not none else 'N/A' }}
+            secondary: PV takeover
+            icon: mdi:weather-sunny
+            icon_color: yellow
+          - type: custom:mushroom-entity-card
+            entity: sensor.technikraum_egoptimizer_house_load_now_avg
+            name: Load now
+            icon_color: orange
+          - type: custom:mushroom-entity-card
+            entity: sensor.technikraum_egoptimizer_base_load_overnight_est
+            name: Base load
+            icon_color: blue-grey
+      - type: entities
+        title: Controls
+        show_header_toggle: false
+        entities:
+          - entity: number.egoptimizer_target_morning_soc
+            name: Target morning SoC
+          - entity: number.egoptimizer_exploration_aggressiveness
+            name: Exploration aggressiveness
+          - entity: select.egoptimizer_learning_mode
+            name: Learning mode
+          - type: buttons
+            entities:
+              - entity: button.technikraum_egoptimizer_refresh_recommendation
+                name: Refresh
+                icon: mdi:refresh
+              - entity: button.technikraum_egoptimizer_train_model
+                name: Train
+                icon: mdi:school
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Tonight's plan & exploration
+      - type: custom:apexcharts-card
+        graph_span: 24h
+        span:
+          start: hour
+        header:
+          show: true
+          title: Feed plan & EG capacity
+          show_states: true
+        apex_config:
+          xaxis:
+            labels:
+              format: HH:mm
+        yaxis:
+          - id: energy
+            min: 0
+            decimals: 2
+        series:
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: Exploit
+            yaxis_id: energy
+            type: column
+            color: "#2ecc71"
+            group_by: { func: raw }
+            data_generator: |
+              return (entity.attributes.feed_plan || []).map((i) => {
+                return { x: new Date(i.time).getTime(), y: i.explore ? 0 : i.feed_kwh };
+              });
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: Explore (probe)
+            yaxis_id: energy
+            type: column
+            color: "#e67e22"
+            group_by: { func: raw }
+            data_generator: |
+              return (entity.attributes.feed_plan || []).map((i) => {
+                return { x: new Date(i.time).getTime(), y: i.explore ? i.feed_kwh : 0 };
+              });
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: EG capacity ceiling
+            yaxis_id: energy
+            type: line
+            color: "#3498db"
+            stroke_width: 3
+            group_by: { func: raw }
+            data_generator: |
+              return (entity.attributes.feed_plan || []).map((i) => {
+                return { x: new Date(i.time).getTime(), y: i.capacity_kwh };
+              });
+      - type: markdown
+        content: >-
+          ### Exploration activity
+
+          | Time | Plan | Capacity | Type |
+
+          | :--- | :--- | :--- | :--- |
+
+          {% set plan = state_attr('sensor.egoptimizer_feed_setpoint', 'feed_plan') %}
+
+          {% if plan %}{% for i in plan %}{% set t = as_datetime(i.time) %}| **{{ t.strftime('%H:%M') if t is not none else i.hour }}** | {{ (i.feed_kwh | float(0)) | round(2) }} kWh | {{ (i.capacity_kwh | float(0)) | round(2) }} kWh | {{ '🟠 Explore' if i.explore else '🟢 Exploit' }} |
+          {% endfor %}{% else %}| _no plan (holding / no budget)_ | | | |{% endif %}
+
+
+          ### Current context
+
+          {% set c = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
+
+          {% if c and c.context %}{% set ctx = c.context %}
+
+          - Bucket: `{{ ctx.bucket }}` — **{{ ctx.observations | int }}** obs
+
+          - Best seen censored: **{{ 'yes' if ctx.best_was_censored else 'no' }}**{{ ' (ceiling unknown → probes)' if ctx.best_was_censored else ' (ceiling known → exploits)' }}
+
+          - Uptake mean / max: {{ (ctx.mean_absorbed_kwh | float(0)) | round(2) }} / {{ (ctx.max_absorbed_kwh | float(0)) | round(2) }} kWh
+
+          - Recommended capacity: {{ (ctx.recommended_capacity_kwh | float(0)) | round(2) }} kWh
+
+          {% else %}_No context yet (no budget short-circuits before the model runs)._{% endif %}
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Battery & PV forecast
+      - type: custom:apexcharts-card
+        graph_span: 24h
+        span:
+          start: hour
+        header:
+          show: true
+          title: Projected SoC until PV takeover
+          show_states: true
+        apex_config:
+          xaxis:
+            labels:
+              format: HH:mm
+        yaxis:
+          - id: soc
+            min: 0
+            max: 100
+            decimals: 0
+          - id: pv
+            opposite: true
+            min: 0
+            decimals: 2
+        series:
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: SoC forecast
+            yaxis_id: soc
+            type: line
+            color: "#2ecc71"
+            stroke_width: 3
+            group_by: { func: raw }
+            data_generator: |
+              return (entity.attributes.soc_forecast || []).map((i) => {
+                return { x: new Date(i.t).getTime(), y: i.soc_pct };
+              });
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: PV forecast
+            yaxis_id: pv
+            type: area
+            color: "#f1c40f"
+            opacity: 0.25
+            group_by: { func: raw }
+            data_generator: |
+              return (entity.attributes.soc_forecast || []).map((i) => {
+                return { x: new Date(i.t).getTime(), y: i.pv_kw };
+              });
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: Target SoC
+            yaxis_id: soc
+            type: line
+            color: "#e74c3c"
+            stroke_width: 2
+            group_by: { func: raw }
+            data_generator: |
+              const tgt = (entity.attributes.debug && entity.attributes.debug.inputs
+                          && entity.attributes.debug.inputs.target_morning_soc_pct) || 50;
+              return (entity.attributes.soc_forecast || []).map((i) => {
+                return { x: new Date(i.t).getTime(), y: tgt };
+              });
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Diagnostics
+      - type: markdown
+        content: >-
+          {% set d = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
+
+          {% if d %}### Decision
+
+          | | |
+
+          | :--- | :--- |
+
+          | Path | `{{ d.decision.path }}` |
+
+          | Status / confidence | `{{ d.decision.status }}` / `{{ d.decision.confidence }}` |
+
+
+          ### Inputs
+
+          | | |
+
+          | :--- | :--- |
+
+          | SoC | {{ d.inputs.soc_pct }}% |
+
+          | Target / hard-min | {{ d.inputs.target_morning_soc_pct }}% / {{ d.inputs.hard_min_soc_pct }}% |
+
+          | Capacity | {{ d.inputs.capacity_kwh }} kWh |
+
+          | Load now (smoothed) | {{ (d.inputs.load_now_kw | float(0)) | round(3) }} kW |
+
+          | **Night base load (sim uses)** | **{{ (d.inputs.load_kw | float(0)) | round(3) }} kW** |
+
+          | Mode / aggressiveness | {{ d.inputs.mode }} / {{ d.inputs.exploration_aggressiveness }} |
+
+
+          ### Autarky
+
+          | | |
+
+          | :--- | :--- |
+
+          | EG budget | {{ (d.autarky.eg_budget_kwh | float(0)) | round(2) }} kWh |
+
+          | Trough | {{ d.autarky.trough_soc_pct }}% @ {{ d.autarky.trough_time }} |
+
+          | PV takeover | {{ d.autarky.pv_takeover_time }} |
+
+          | Model | {{ d.model.bucket_count }} buckets, loaded={{ d.model.loaded }} |
+
+          {% else %}_No debug data._{% endif %}
+      - type: custom:mushroom-template-card
+        entity: sensor.technikraum_egoptimizer_base_load_overnight_est
+        primary: "{{ states('sensor.technikraum_egoptimizer_base_load_overnight_est') }} kW"
+        secondary: >-
+          Base load — source: {{ state_attr('sensor.technikraum_egoptimizer_base_load_overnight_est', 'source') }}
+        icon: mdi:home-clock
+        icon_color: blue-grey
+      - type: history-graph
+        hours_to_show: 48
+        title: 48 h history
+        entities:
+          - sensor.egoptimizer_feed_setpoint
+          - sensor.egoptimizer_eg_budget_tonight
+          - sensor.egoptimizer_forecast_trough_soc
+
+  - type: grid
+    cards:
+      - type: heading
+        heading: Data & settings
+      - type: markdown
+        content: >-
+          ### Configuration
+
+          Data upload (CSV), battery/entity settings, retention and deletion all live in:
+
+
+          **Settings → Devices & Services → EGOptimizer → Configure**
+
+
+          Use the buttons below for manual recompute / retrain.
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: button.technikraum_egoptimizer_refresh_recommendation
+            name: Recompute now
+            icon: mdi:refresh
+          - entity: button.technikraum_egoptimizer_train_model
+            name: Retrain model
+            icon: mdi:school
+          - entity: update.egoptimizer_update
+            name: Integration update

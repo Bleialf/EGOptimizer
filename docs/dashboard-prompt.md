@@ -132,6 +132,23 @@ VIEWS TO BUILD (one dashboard, these tabs):
      EGOptimizer → Configure. Include the train + refresh buttons and the update
      entity here too.
 
+APEXCHARTS-CARD — STRICT SCHEMA (these caused "Configuration error" before):
+- There is NO top-level `xaxis:` key. Format the time axis via
+  `apex_config: { xaxis: { labels: { format: HH:mm } } }`.
+- `yaxis:` items support ONLY id/min/max/decimals/opposite/apex_config — NOT
+  `title`. Omit titles or put them in `apex_config`.
+- `header:` supports show/title/show_states only — NO `abilities`.
+- Series support type (line/area/column), color, stroke_width, opacity,
+  yaxis_id, group_by, data_generator — NOT `stroke_dash_array`, NOT `type:
+  scatter`. For a flat reference line (e.g. target SoC) emit a normal `line`
+  series whose data_generator returns the constant for every x.
+- FORECAST data is in the FUTURE, so the default (now-graph_span … now) window
+  hides it. Use `graph_span: 24h` + `span: { start: hour }` to show now → +24h.
+
+JINJA — guard every number, the model returns nulls on the no_budget path:
+- Always `{{ (x | float(0)) | round(2) }}`, never `{{ x | round(2) }}`
+  (debug.context.* and capacity fields are null when status == no_budget).
+
 OUTPUT
 - Return ONLY the complete dashboard YAML, ready to paste into the raw config
   editor (top-level `views:`). Add brief `#` comments above any custom: card
@@ -139,6 +156,8 @@ OUTPUT
   reshape attributes. Make ApexCharts `data_generator` blocks correct JS that map
   the attribute arrays to [x,y] pairs (parse ISO time with new Date(...).getTime()).
 ```
+
+A corrected, working reference dashboard is committed at `docs/dashboard.yaml`.
 
 ---
 
