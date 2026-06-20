@@ -107,7 +107,6 @@ sections:
         header:
           show: true
           title: Feed plan & EG capacity
-          show_states: true
         apex_config:
           xaxis:
             labels:
@@ -122,7 +121,6 @@ sections:
             yaxis_id: energy
             type: column
             color: "#2ecc71"
-            group_by: { func: raw }
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
                 return { x: new Date(i.time).getTime(), y: i.explore ? 0 : i.feed_kwh };
@@ -132,7 +130,6 @@ sections:
             yaxis_id: energy
             type: column
             color: "#e67e22"
-            group_by: { func: raw }
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
                 return { x: new Date(i.time).getTime(), y: i.explore ? i.feed_kwh : 0 };
@@ -143,7 +140,6 @@ sections:
             type: line
             color: "#3498db"
             stroke_width: 3
-            group_by: { func: raw }
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
                 return { x: new Date(i.time).getTime(), y: i.capacity_kwh };
@@ -189,7 +185,6 @@ sections:
         header:
           show: true
           title: Projected SoC until PV takeover
-          show_states: true
         apex_config:
           xaxis:
             labels:
@@ -210,7 +205,6 @@ sections:
             type: line
             color: "#2ecc71"
             stroke_width: 3
-            group_by: { func: raw }
             data_generator: |
               return (entity.attributes.soc_forecast || []).map((i) => {
                 return { x: new Date(i.t).getTime(), y: i.soc_pct };
@@ -221,7 +215,6 @@ sections:
             type: area
             color: "#f1c40f"
             opacity: 0.25
-            group_by: { func: raw }
             data_generator: |
               return (entity.attributes.soc_forecast || []).map((i) => {
                 return { x: new Date(i.t).getTime(), y: i.pv_kw };
@@ -232,7 +225,6 @@ sections:
             type: line
             color: "#e74c3c"
             stroke_width: 2
-            group_by: { func: raw }
             data_generator: |
               const tgt = (entity.attributes.debug && entity.attributes.debug.inputs
                           && entity.attributes.debug.inputs.target_morning_soc_pct) || 50;
