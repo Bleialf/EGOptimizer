@@ -67,6 +67,8 @@
           "hard_min_entity": "Victron minimum SoC (optional)",
           "scan_minutes": "Recompute interval",
           "load_average_minutes": "Smooth load over (minutes)",
+          "base_load_window_minutes": "Base-load window (minutes)",
+          "base_load_percentile": "Base-load percentile",
           "retention_days": "Keep data for (days)"
         },
         "data_description": {
@@ -77,7 +79,9 @@
           "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor. Combined with today so the forward curve always reaches tomorrow's morning recharge; past hours ignored.",
           "hard_min_entity": "Optional Victron minimum-SoC number, used only to clamp the target.",
           "scan_minutes": "How often to recompute (minutes).",
-          "load_average_minutes": "The load sensor is sampled every 30 s and averaged over this window before going to the brain — this stops a kettle/oven blip from jerking the feed setpoint. 15 min is a good default; set 0 to disable and use the instantaneous value.",
+          "load_average_minutes": "The load sensor is sampled every 30 s and averaged over this window for the 'load now' figure — this stops a kettle/oven blip from jerking the feed setpoint. 15 min is a good default; set 0 to disable.",
+          "base_load_window_minutes": "Window used to estimate your SUSTAINED base load (the overnight draw the battery simulation uses). The brain plans the night around this, not the spiky instantaneous load. 180 min is a good default.",
+          "base_load_percentile": "Which percentile of the load over that window counts as 'base load'. 25 ≈ the quiet baseline (fridge/standby). Lower = assumes a lighter night → feeds more; higher = more conservative for autarky. Default 25.",
           "retention_days": "Default retention used by 'Delete old data'. 0 keeps everything."
         }
       },

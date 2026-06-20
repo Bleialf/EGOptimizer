@@ -27,6 +27,8 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
+    CONF_BASE_LOAD_PERCENTILE,
+    CONF_BASE_LOAD_WINDOW_MINUTES,
     CONF_HARD_MIN_ENTITY,
     CONF_LOAD_AVG_MINUTES,
     CONF_LOAD_ENTITY,
@@ -35,6 +37,8 @@ from .const import (
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
+    DEFAULT_BASE_LOAD_PERCENTILE,
+    DEFAULT_BASE_LOAD_WINDOW_MINUTES,
     DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SCAN_MINUTES,
@@ -172,6 +176,10 @@ class EGOptimizerOptionsFlow(OptionsFlow):
                     NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min")),
                 vol.Optional(CONF_LOAD_AVG_MINUTES, default=cur.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES)):
                     NumberSelector(NumberSelectorConfig(min=0, max=60, step=1, unit_of_measurement="min")),
+                vol.Optional(CONF_BASE_LOAD_WINDOW_MINUTES, default=cur.get(CONF_BASE_LOAD_WINDOW_MINUTES, DEFAULT_BASE_LOAD_WINDOW_MINUTES)):
+                    NumberSelector(NumberSelectorConfig(min=15, max=720, step=15, unit_of_measurement="min")),
+                vol.Optional(CONF_BASE_LOAD_PERCENTILE, default=cur.get(CONF_BASE_LOAD_PERCENTILE, DEFAULT_BASE_LOAD_PERCENTILE)):
+                    NumberSelector(NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")),
                 vol.Optional(CONF_RETENTION_DAYS, default=cur.get(CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)):
                     NumberSelector(NumberSelectorConfig(min=0, max=3650, step=30, unit_of_measurement="days")),
             }

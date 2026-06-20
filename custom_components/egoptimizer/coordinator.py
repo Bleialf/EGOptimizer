@@ -14,6 +14,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_AGGRESSIVENESS,
+    CONF_BASE_LOAD_PERCENTILE,
+    CONF_BASE_LOAD_WINDOW_MINUTES,
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
     CONF_HARD_MIN_ENTITY,
@@ -26,6 +28,8 @@ from .const import (
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_TARGET_MORNING_SOC,
     DEFAULT_AGGRESSIVENESS,
+    DEFAULT_BASE_LOAD_PERCENTILE,
+    DEFAULT_BASE_LOAD_WINDOW_MINUTES,
     DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_MODE,
     DEFAULT_SCAN_MINUTES,
@@ -51,11 +55,20 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         self._solcast = data.get(CONF_SOLCAST_ENTITY)
         self._solcast_tomorrow = data.get(CONF_SOLCAST_TOMORROW_ENTITY)
         self._hard_min = data.get(CONF_HARD_MIN_ENTITY)
-        # Rolling average of the raw load, sampled on a fast internal timer so
-        # the brain gets a smoothed value -- no statistics sensor required.
-        avg_min = float(data.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES))
-        maxlen = max(1, round(avg_min * 60 / LOAD_SAMPLE_SECONDS))
+        # Sample the raw load on a fast internal timer (no statistics sensor
+        # needed). From the buffer we derive two figures:
+        #   load_now  = mean of the last `avg_min`  -> the immediate draw
+        #   base_load = low percentile over `base_min` -> the SUSTAINED baseline,
+        #               sent as night_load_kw so the overnight battery sim isn't
+        #               drained by a transient daytime spike.
+        self._avg_min = float(data.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES))
+        self._base_min = float(data.get(CONF_BASE_LOAD_WINDOW_MINUTES, DEFAULT_BASE_LOAD_WINDOW_MINUTES))
+        self._base_pct = float(data.get(CONF_BASE_LOAD_PERCENTILE, DEFAULT_BASE_LOAD_PERCENTILE))
+        maxlen = max(1, round(max(self._avg_min, self._base_min) * 60 / LOAD_SAMPLE_SECONDS))
         self._load_samples: deque[float] = deque(maxlen=maxlen)
+        # Last computed values, exposed as sensors.
+        self.load_now_kw: float | None = None
+        self.base_load_kw: float | None = None
         # Mutable runtime controls, also editable via number/select entities.
         self.target_morning_soc = float(
             data.get(CONF_TARGET_MORNING_SOC, DEFAULT_TARGET_MORNING_SOC)
@@ -112,11 +125,25 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             self.hass, self._sample_load, timedelta(seconds=LOAD_SAMPLE_SECONDS)
         )
 
-    def _averaged_load(self) -> float | None:
-        """Mean of buffered samples (kW); falls back to the instant reading."""
-        if self._load_samples:
-            return round(sum(self._load_samples) / len(self._load_samples), 4)
-        return self._num(self._load, power_to_kw=True)
+    def _compute_loads(self) -> tuple[float | None, float | None]:
+        """(load_now, base_load) in kW from the sample buffer.
+
+        load_now  = mean of the most recent `avg_min` of samples.
+        base_load = `base_pct` percentile over the whole (`base_min`) buffer --
+                    the sustained baseline, used as the overnight draw.
+        Falls back to the instantaneous reading until samples accumulate.
+        """
+        samples = list(self._load_samples)
+        if not samples:
+            inst = self._num(self._load, power_to_kw=True)
+            return inst, inst
+        now_n = max(1, round(self._avg_min * 60 / LOAD_SAMPLE_SECONDS))
+        recent = samples[-now_n:]
+        load_now = sum(recent) / len(recent)
+        ordered = sorted(samples)
+        k = min(len(ordered) - 1, int(self._base_pct / 100.0 * len(ordered)))
+        base = ordered[k]
+        return round(load_now, 4), round(base, 4)
 
     def _build_payload(self) -> dict:
         soc = self._num(self._soc)
@@ -127,9 +154,14 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             "mode": self.mode,
             "exploration_aggressiveness": self.aggressiveness,
         }
-        load = self._averaged_load()
-        if load is not None:
-            payload["load_now_kw"] = load
+        load_now, base_load = self._compute_loads()
+        self.load_now_kw, self.base_load_kw = load_now, base_load
+        if load_now is not None:
+            payload["load_now_kw"] = load_now
+        if base_load is not None:
+            # The overnight draw the autarky sim uses -> the sustained baseline,
+            # not the spiky instantaneous load.
+            payload["night_load_kw"] = base_load
         hard_min = self._num(self._hard_min)
         if hard_min is not None:
             payload["hard_min_soc_pct"] = hard_min

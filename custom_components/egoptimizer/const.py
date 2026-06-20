@@ -22,16 +22,24 @@ CONF_MODE = "mode"
 CONF_RETENTION_DAYS = "retention_days"
 CONF_AGGRESSIVENESS = "exploration_aggressiveness"
 CONF_LOAD_AVG_MINUTES = "load_average_minutes"
+CONF_BASE_LOAD_WINDOW_MINUTES = "base_load_window_minutes"
+CONF_BASE_LOAD_PERCENTILE = "base_load_percentile"
 
 DEFAULT_SCAN_MINUTES = 15
 DEFAULT_TARGET_MORNING_SOC = 50.0
 DEFAULT_MODE = "explore"
 DEFAULT_RETENTION_DAYS = 1095          # ~3 years; 0 = keep everything
 DEFAULT_AGGRESSIVENESS = 0.15
-DEFAULT_LOAD_AVG_MINUTES = 15          # rolling-average window for the load sensor
+DEFAULT_LOAD_AVG_MINUTES = 15          # rolling-average window for "load now"
+# Overnight base load: a low percentile of the load over a long window. This is
+# the SUSTAINED baseline (fridge/standby) -- a realistic stand-in for the night
+# draw, instead of the volatile instantaneous load that wrongly drained the
+# simulated battery overnight.
+DEFAULT_BASE_LOAD_WINDOW_MINUTES = 180
+DEFAULT_BASE_LOAD_PERCENTILE = 25      # 0..100; lower = more feeding, higher = safer
 MODES = ["explore", "locked"]
 
-# How often (seconds) we sample the raw load into the rolling-average buffer.
+# How often (seconds) we sample the raw load into the rolling buffer.
 # Decoupled from the recompute interval so smoothing works regardless of it.
 LOAD_SAMPLE_SECONDS = 30
 

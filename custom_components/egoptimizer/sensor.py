@@ -22,6 +22,9 @@ from .entity import EGOptimizerEntity
 @dataclass(frozen=True, kw_only=True)
 class EGSensor(SensorEntityDescription):
     value: Callable[[dict], object] = lambda d: None
+    # If set, read from the coordinator object instead of the brain response
+    # (used for values the integration computes locally, e.g. the load average).
+    coord: Callable[[object], object] | None = None
 
 
 def _plan_state(data: dict) -> str:
@@ -94,6 +97,15 @@ SENSORS: tuple[EGSensor, ...] = (
              value=lambda d: d.get("pv_takeover_time")),
     EGSensor(key="rationale", name="Reasoning", icon="mdi:text-long",
              value=lambda d: (d.get("rationale") or "")[:255]),
+    # Locally-computed load figures (so you can see what the brain is fed).
+    EGSensor(key="load_now", name="House load (now, avg)", icon="mdi:home-lightning-bolt",
+             native_unit_of_measurement=UnitOfPower.KILO_WATT,
+             device_class=SensorDeviceClass.POWER,
+             coord=lambda c: c.load_now_kw),
+    EGSensor(key="base_load", name="Base load (overnight est.)", icon="mdi:home-clock",
+             native_unit_of_measurement=UnitOfPower.KILO_WATT,
+             device_class=SensorDeviceClass.POWER,
+             coord=lambda c: c.base_load_kw),
 )
 
 
@@ -113,6 +125,8 @@ class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
 
     @property
     def native_value(self):
+        if self.entity_description.coord is not None:
+            return self.entity_description.coord(self.coordinator)
         return self.entity_description.value(self.coordinator.data or {})
 
     @property

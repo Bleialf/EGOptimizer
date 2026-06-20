@@ -177,7 +177,9 @@ def recommend(
                 "note": note,
             },
             "inputs": {
-                "soc_pct": soc, "capacity_kwh": capacity, "load_kw": round(load_kw, 3),
+                "soc_pct": soc, "capacity_kwh": capacity,
+                "load_kw": round(load_kw, 3),     # the (base/overnight) load used for the sim
+                "load_now_kw": _f(state, "load_now_kw", load_kw),  # immediate draw, for reference
                 "target_morning_soc_pct": res.effective_target_pct,
                 "hard_min_soc_pct": hard_min, "mode": mode,
                 "exploration_aggressiveness": aggressiveness,

@@ -46,6 +46,16 @@ class TestRecommend(unittest.TestCase):
         r = recommend(self._state(timestamp="2026-01-16T14:00:00"), self.cfg, self.store)
         self.assertEqual(r["feed_kw"], 0.0)
 
+    def test_night_load_overrides_load_now_for_budget(self):
+        # A spiky instantaneous load must NOT drain the simulated battery if the
+        # sustained base load (night_load_kw) is low -> budget should survive.
+        spiky = recommend(self._state(load_now_kw=3.5, night_load_kw=3.5), self.cfg, self.store)
+        based = recommend(self._state(load_now_kw=3.5, night_load_kw=0.4), self.cfg, self.store)
+        self.assertGreater(based["eg_budget_kwh"], spiky["eg_budget_kwh"])
+        # the sim must use the base load, not the instantaneous one
+        self.assertEqual(based["debug"]["inputs"]["load_kw"], 0.4)
+        self.assertEqual(based["debug"]["inputs"]["load_now_kw"], 3.5)
+
     def test_higher_target_reduces_feed(self):
         low = recommend(self._state(target_morning_soc_pct=30), self.cfg, self.store)
         high = recommend(self._state(target_morning_soc_pct=80), self.cfg, self.store)
