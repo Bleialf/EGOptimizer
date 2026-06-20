@@ -160,6 +160,11 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
     def _build_payload(self) -> dict:
         soc = self._num(self._soc)
         payload: dict = {
+            # LOCAL wall-clock (naive). The brain buckets by hour and the model
+            # was trained on local CSV timestamps; the Solcast forecast is local
+            # too. Without this the brain falls back to the container clock (UTC)
+            # and both the bucket lookup and the displayed times are offset.
+            "timestamp": dt_util.now().replace(microsecond=0, tzinfo=None).isoformat(),
             "soc_pct": soc,
             "capacity_kwh": self._capacity,
             "target_morning_soc_pct": self.target_morning_soc,
