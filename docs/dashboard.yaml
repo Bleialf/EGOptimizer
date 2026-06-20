@@ -123,7 +123,7 @@ sections:
             color: "#2ecc71"
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
-                return { x: new Date(i.time).getTime(), y: i.explore ? 0 : i.feed_kwh };
+                return [new Date(i.time).getTime(), i.explore ? 0 : i.feed_kwh];
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: Explore (probe)
@@ -132,7 +132,7 @@ sections:
             color: "#e67e22"
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
-                return { x: new Date(i.time).getTime(), y: i.explore ? i.feed_kwh : 0 };
+                return [new Date(i.time).getTime(), i.explore ? i.feed_kwh : 0];
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: EG capacity ceiling
@@ -142,37 +142,39 @@ sections:
             stroke_width: 3
             data_generator: |
               return (entity.attributes.feed_plan || []).map((i) => {
-                return { x: new Date(i.time).getTime(), y: i.capacity_kwh };
+                return [new Date(i.time).getTime(), i.capacity_kwh];
               });
       - type: markdown
-        content: >-
+        content: |
           ### Exploration activity
+          {% set plan = state_attr('sensor.egoptimizer_feed_setpoint', 'feed_plan') or [] %}
+          {%- if plan %}
+          {%- set ns = namespace(rows=['| Time | Plan | Capacity | Type |', '| :--- | :--- | :--- | :--- |']) %}
+          {%- for i in plan %}
+          {%- set t = as_datetime(i.time) %}
+          {%- set tt = t.strftime('%H:%M') if t is not none else i.hour %}
+          {%- set ns.rows = ns.rows + ['| **' ~ tt ~ '** | ' ~ ((i.feed_kwh | float(0)) | round(2)) ~ ' kWh | ' ~ ((i.capacity_kwh | float(0)) | round(2)) ~ ' kWh | ' ~ ('🟠 Explore' if i.explore else '🟢 Exploit') ~ ' |'] %}
+          {%- endfor %}
 
-          | Time | Plan | Capacity | Type |
+          {{ ns.rows | join('\n') }}
+          {%- else %}
 
-          | :--- | :--- | :--- | :--- |
-
-          {% set plan = state_attr('sensor.egoptimizer_feed_setpoint', 'feed_plan') %}
-
-          {% if plan %}{% for i in plan %}{% set t = as_datetime(i.time) %}| **{{ t.strftime('%H:%M') if t is not none else i.hour }}** | {{ (i.feed_kwh | float(0)) | round(2) }} kWh | {{ (i.capacity_kwh | float(0)) | round(2) }} kWh | {{ '🟠 Explore' if i.explore else '🟢 Exploit' }} |
-          {% endfor %}{% else %}| _no plan (holding / no budget)_ | | | |{% endif %}
-
+          _No plan (holding / no budget)._
+          {%- endif %}
 
           ### Current context
-
           {% set c = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
-
-          {% if c and c.context %}{% set ctx = c.context %}
+          {%- if c and c.context and c.context.observations %}
+          {%- set ctx = c.context %}
 
           - Bucket: `{{ ctx.bucket }}` — **{{ ctx.observations | int }}** obs
-
           - Best seen censored: **{{ 'yes' if ctx.best_was_censored else 'no' }}**{{ ' (ceiling unknown → probes)' if ctx.best_was_censored else ' (ceiling known → exploits)' }}
-
           - Uptake mean / max: {{ (ctx.mean_absorbed_kwh | float(0)) | round(2) }} / {{ (ctx.max_absorbed_kwh | float(0)) | round(2) }} kWh
-
           - Recommended capacity: {{ (ctx.recommended_capacity_kwh | float(0)) | round(2) }} kWh
+          {%- else %}
 
-          {% else %}_No context yet (no budget short-circuits before the model runs)._{% endif %}
+          _No context yet (no budget short-circuits before the model runs)._
+          {%- endif %}
 
   - type: grid
     cards:
@@ -207,7 +209,7 @@ sections:
             stroke_width: 3
             data_generator: |
               return (entity.attributes.soc_forecast || []).map((i) => {
-                return { x: new Date(i.t).getTime(), y: i.soc_pct };
+                return [new Date(i.t).getTime(), i.soc_pct];
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: PV forecast
@@ -217,7 +219,7 @@ sections:
             opacity: 0.25
             data_generator: |
               return (entity.attributes.soc_forecast || []).map((i) => {
-                return { x: new Date(i.t).getTime(), y: i.pv_kw };
+                return [new Date(i.t).getTime(), i.pv_kw];
               });
           - entity: sensor.egoptimizer_feed_setpoint
             name: Target SoC
@@ -229,7 +231,7 @@ sections:
               const tgt = (entity.attributes.debug && entity.attributes.debug.inputs
                           && entity.attributes.debug.inputs.target_morning_soc_pct) || 50;
               return (entity.attributes.soc_forecast || []).map((i) => {
-                return { x: new Date(i.t).getTime(), y: tgt };
+                return [new Date(i.t).getTime(), tgt];
               });
 
   - type: grid
