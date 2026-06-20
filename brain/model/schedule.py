@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from brain.forecast.simulate import simulate_soc
 from brain.model.capacity import CapacityModel
 
 
@@ -75,6 +76,72 @@ def plan_feed(
         HourPlan(hour=caps[i][0].hour, ts=caps[i][0], feed_kwh=round(alloc[i], 4),
                  capacity_kwh=round(caps[i][1], 4), explore=caps[i][2] and alloc[i] > 0)
         for i in range(len(caps))
+    ]
+
+
+def plan_feed_autarky(
+    now: datetime,
+    soc_kwh: float,
+    capacity_kwh: float,
+    target_kwh: float,
+    load_kw: float,
+    pv_slots: tuple | list,
+    model: CapacityModel,
+    max_per_hour_kwh: float,
+    mode: str | None = None,
+    aggressiveness: float | None = None,
+    horizon_h: float = 36.0,
+) -> list[HourPlan]:
+    """Per-hour feed plan under a hard autarky floor.
+
+    For every hour in the horizon (daytime included) we may feed up to the EG's
+    learned capacity that hour -- PROVIDED the simulated SoC never drops below
+    `target_kwh` at any point in the horizon. Because the horizon spans all of
+    tomorrow, a cloudy tomorrow (battery can't refill) makes the floor bind and
+    feeding is held back; a sunny tomorrow frees up daytime surplus to feed.
+
+    Greedy: fill the highest-absorption hours first, each to the most the floor
+    allows (binary search), re-simulating the whole trajectory each step so the
+    constraint accounts for every feed already committed.
+    """
+    hours = hours_until(now, now + timedelta(hours=horizon_h))
+    caps: dict[datetime, float] = {}
+    expl: dict[datetime, bool] = {}
+    for h in hours:
+        cap, explore, _ = model.recommend_capacity(h, mode=mode, aggressiveness=aggressiveness)
+        caps[h] = max(0.0, min(cap, max_per_hour_kwh))
+        expl[h] = explore
+
+    feed: dict[datetime, float] = {h: 0.0 for h in hours}
+
+    def floor_ok(trial: dict) -> bool:
+        traj = simulate_soc(now, soc_kwh, capacity_kwh, load_kw, list(pv_slots),
+                            feed_by_hour=trial, horizon_h=horizon_h)
+        return traj.trough_soc_kwh >= target_kwh - 1e-6  # trough = global min SoC
+
+    # If we can't even hold the floor with zero feed, there's nothing to give.
+    if not floor_ok(feed):
+        return [HourPlan(h.hour, h, 0.0, round(caps[h], 4), False) for h in hours]
+
+    for h in sorted(hours, key=lambda x: caps[x], reverse=True):
+        if caps[h] <= 1e-6:
+            continue
+        lo, hi = 0.0, caps[h]
+        trial = dict(feed)
+        for _ in range(20):                 # binary-search the max feasible feed at h
+            mid = (lo + hi) / 2.0
+            trial[h] = mid
+            if floor_ok(trial):
+                lo = mid
+            else:
+                hi = mid
+        feed[h] = lo                        # lo is always feasible; never round UP
+                                            # (that would tip the trough below floor)
+
+    return [
+        HourPlan(hour=h.hour, ts=h, feed_kwh=round(feed[h], 3),
+                 capacity_kwh=round(caps[h], 4), explore=expl[h] and feed[h] > 1e-4)
+        for h in hours
     ]
 
 

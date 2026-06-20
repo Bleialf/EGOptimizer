@@ -63,12 +63,15 @@ def simulate_soc(
     feed_kw: float = 0.0,
     horizon_h: float = 24.0,
     step_min: int = 15,
+    feed_by_hour: dict | None = None,
 ) -> Trajectory:
     """Simulate the SoC curve from `now` over `horizon_h`.
 
-    A 1-hour Solcast slot's kWh is treated as average kW over that hour. `feed_kw`
-    (constant EG discharge) is applied only while inside the implicit night --
-    here the caller passes 0 to find the natural trough, then derives the budget.
+    A 1-hour Solcast slot's kWh is treated as average kW over that hour.
+    EG discharge is either a constant `feed_kw`, or — when `feed_by_hour` is
+    given — a per-hour schedule {hour_start_datetime: kWh-for-that-hour} (the
+    kWh is treated as an average kW over the hour). The per-hour form is what
+    the autarky planner uses to test a candidate plan against the SoC floor.
     """
     cap = max(capacity_kwh, 1e-9)
     table = _pv_table(pv_slots)
@@ -81,13 +84,17 @@ def simulate_soc(
     t = now
     for idx in range(steps + 1):
         pv_kw = table.get((t.date(), t.hour), 0.0)  # kWh/h == avg kW
+        if feed_by_hour is not None:
+            this_feed = feed_by_hour.get(t.replace(minute=0, second=0, microsecond=0), 0.0)
+        else:
+            this_feed = feed_kw
         points.append(
             SimPoint(t, round(soc, 3), round(100.0 * soc / cap, 1),
                      round(pv_kw, 3), round(load_kw, 3))
         )
         if takeover is None and idx > 0 and pv_kw >= load_kw:
             takeover = t
-        net_kw = pv_kw - load_kw - feed_kw
+        net_kw = pv_kw - load_kw - this_feed
         soc = max(0.0, min(cap, soc + net_kw * step_h))
         t += timedelta(minutes=step_min)
 

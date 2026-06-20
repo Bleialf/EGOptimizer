@@ -24,7 +24,7 @@ from datetime import datetime
 from brain.forecast.reserve import ReserveInputs, compute_reserve
 from brain.model.capacity import CapacityModel
 from brain.model.context import bucket_key
-from brain.model.schedule import feed_now_kw, hours_until, plan_feed
+from brain.model.schedule import feed_now_kw, hours_until, plan_feed_autarky
 from brain.storage import Store
 
 VERSION = "phase3-bandit"
@@ -40,6 +40,26 @@ def _first(*values) -> float:
         if v is not None:
             return float(v)
     return 0.0
+
+
+def _horizon_to_forecast_end(now, pv_slots, min_h: float = 24.0, cap_h: float = 48.0) -> float:
+    """Hours to simulate: extend to the last PV slot (+1h) so the floor sees all
+    of tomorrow's recharge, but never past the forecast (that would assume 0 PV
+    and drain to a false trough). Clamped to [min_h, cap_h]."""
+    last = None
+    for s in pv_slots or ():
+        try:
+            dt = datetime.fromisoformat(
+                str(s["period_start"]).replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except (KeyError, ValueError, TypeError):
+            continue
+        if last is None or dt > last:
+            last = dt
+    if last is None:
+        return min_h
+    span = (last - now).total_seconds() / 3600.0 + 1.0
+    return max(min_h, min(span, cap_h))
 
 
 def _downsample(points, every_min: int = 60) -> list[dict]:
@@ -73,6 +93,13 @@ def recommend(
     # Overnight house draw: live smoothed load preferred, then config fallback.
     load_kw = _first(state.get("night_load_kw"), state.get("load_now_kw"), aut["night_load_kw"])
 
+    # Simulate to the END of the PV forecast (covers all of tomorrow), so the
+    # autarky floor accounts for tomorrow's recharge -- a cloudy tomorrow keeps
+    # the SoC low and holds feeding back. We do NOT extend blindly past the
+    # forecast (that would assume 0 PV and drain to a false trough).
+    pv_slots = tuple(state.get("pv_forecast") or ())
+    horizon_h = _horizon_to_forecast_end(now, pv_slots, float(aut.get("sim_horizon_h", 24.0)))
+
     res = compute_reserve(
         ReserveInputs(
             now=now,
@@ -81,17 +108,21 @@ def recommend(
             target_morning_soc_pct=target_morning,
             hard_min_soc_pct=hard_min,
             load_kw=load_kw,
-            pv_slots=tuple(state.get("pv_forecast") or ()),
-            horizon_h=float(aut.get("sim_horizon_h", 24.0)),
+            pv_slots=pv_slots,
+            horizon_h=horizon_h,
         )
     )
 
-    # No fixed clock window: feed across the hours from now until the battery's
-    # trough (after which PV recharges). WHICH of those hours get energy is the
-    # model's call -- daytime hours simply carry ~0 learned capacity.
-    trough_dt = datetime.fromisoformat(res.trough_time)
+    # Per-hour, autarky-bounded plan: we may feed ANY hour (daytime included) up
+    # to the EG's learned capacity, as long as the simulated SoC never drops
+    # below the morning target across a horizon spanning all of tomorrow. So a
+    # cloudy tomorrow (battery can't refill) holds energy back; a sunny one frees
+    # daytime surplus. Recomputed every cycle from the LIVE SoC, so extra night
+    # demand (a party) pulls feeding back on its own.
     aggressiveness = state.get("exploration_aggressiveness")
     mode = state.get("mode") or config["model"].get("mode", "explore")
+    soc_kwh = capacity * soc / 100.0
+    target_kwh = capacity * res.effective_target_pct / 100.0
     explore = False
     feed_plan: list[dict] = []
     confidence = "no_model"
@@ -100,50 +131,59 @@ def recommend(
     cur_stats = None
     decision_path = "no_budget"
     model_bucket_count = len(model.buckets) if model is not None else 0
+    planned_total = 0.0
 
-    if res.eg_budget_kwh <= 0:
-        feed_kw, status = 0.0, "no_budget"
-        note = "No budget after autarky reserve -> feed 0."
-        decision_path = "budget_blocked"
-    elif model is not None and model.buckets:
-        # Phase 3: spend the budget where the community absorbs most. "explore"
-        # probes higher to learn; "locked" feeds the learned uptake (no overshoot).
-        plan = plan_feed(res.eg_budget_kwh, now, trough_dt, model,
-                         bat["max_discharge_kw"], mode=mode, aggressiveness=aggressiveness)
+    if model is not None and model.buckets:
+        plan = plan_feed_autarky(
+            now, soc_kwh, capacity, target_kwh, load_kw, pv_slots, model,
+            bat["max_discharge_kw"], mode=mode, aggressiveness=aggressiveness,
+            horizon_h=horizon_h,
+        )
         feed_plan = [
             {"time": p.ts.isoformat(timespec="minutes"), "hour": p.hour,
              "feed_kwh": p.feed_kwh, "capacity_kwh": p.capacity_kwh, "explore": p.explore}
             for p in plan
         ]
+        planned_total = sum(p.feed_kwh for p in plan)
         feed_kwh, explore = feed_now_kw(plan, now)
         feed_kw = min(feed_kwh, bat["max_discharge_kw"])
-        # How confident are we about THIS hour's context?
         cur_cap, _, cur_stats = model.recommend_capacity(now, mode=mode, aggressiveness=aggressiveness)
         context_obs = cur_stats.n if cur_stats else 0
-        if mode == "locked":
-            confidence = "locked"
-        elif explore:
-            confidence = "probing"
+        confidence = "locked" if mode == "locked" else ("probing" if explore else "confident")
+        if planned_total <= 1e-6:
+            feed_kw, status, decision_path = 0.0, "no_budget", "budget_blocked"
+            note = (f"Autarky floor holds everything back: the battery can't stay "
+                    f">= {res.effective_target_pct:.0f}% through tomorrow "
+                    f"(low SoC and/or weak PV forecast) -> feed 0.")
+        elif feed_kw > 0:
+            status, decision_path = "feeding", "learned_plan"
+            note = (
+                f"Autarky-safe plan ({mode}): feed {feed_kw:.2f} kW now "
+                + {"probing": "(PROBING above known uptake to learn).",
+                   "confident": "(confident: feeding the known ceiling).",
+                   "locked": "(locked: feeding the learned uptake)."}[confidence]
+                + f" {planned_total:.1f} kWh planned; SoC held >= "
+                f"{res.effective_target_pct:.0f}% across the horizon."
+            )
         else:
-            confidence = "confident"
-        # feed_kw == 0 now means the EG doesn't absorb this hour (e.g. daytime).
-        status = "feeding" if feed_kw > 0 else "holding"
-        decision_path = "learned_plan"
-        note = (
-            f"Learned plan ({mode}): feed {feed_kw:.2f} kW this hour "
-            + {"probing": "(PROBING above known uptake to learn).",
-               "confident": "(confident: feeding the known ceiling).",
-               "locked": "(locked: feeding exactly the learned uptake)."}[confidence]
-            if feed_kw > 0 else
-            f"Learned plan ({mode}): EG absorbs ~nothing this hour -> hold; feed later."
-        )
+            status, decision_path = "holding", "learned_plan"
+            note = (f"Autarky-safe plan ({mode}): EG absorbs ~nothing this hour -> "
+                    f"hold; {planned_total:.1f} kWh planned for higher-uptake hours.")
     else:
-        # Fallback when no model is trained yet: flat spread until the trough.
-        hrs = max(1, len(hours_until(now, trough_dt)))
-        feed_kw = min(res.eg_budget_kwh / hrs, bat["max_discharge_kw"])
-        status, confidence = ("feeding" if feed_kw > 0 else "holding"), "no_model"
-        decision_path = "fallback_no_model"
-        note = f"No model yet; flat spread of {res.eg_budget_kwh:.1f} kWh until the trough."
+        # Fallback when no model is trained yet: flat spread of the overnight
+        # headroom until the trough.
+        confidence = "no_model"
+        budget = max(res.eg_budget_kwh, 0.0)
+        if budget <= 1e-6:
+            feed_kw, status, decision_path = 0.0, "no_budget", "budget_blocked"
+            note = "No budget after autarky reserve -> feed 0."
+        else:
+            trough_dt = datetime.fromisoformat(res.trough_time)
+            hrs = max(1, len(hours_until(now, trough_dt)))
+            feed_kw = min(budget / hrs, bat["max_discharge_kw"])
+            planned_total = budget
+            status, decision_path = ("feeding" if feed_kw > 0 else "holding"), "fallback_no_model"
+            note = f"No model yet; flat spread of {budget:.1f} kWh until the trough."
 
     # When/when's the next planned feed, for a clear "what happens next".
     next_feed = next((p["time"] for p in feed_plan if p["feed_kwh"] > 0), None)

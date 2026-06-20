@@ -33,8 +33,10 @@ DEFAULTS: dict = {
         # Average overnight household draw (kW), fallback when HA doesn't send
         # a measured (smoothed) value. Used as the simulation's load rate.
         "night_load_kw": 0.4,
-        # How far ahead to simulate the battery to find the trough. Must reach
-        # past tomorrow's PV ramp (a cloudy morning pushes the trough later).
+        # Minimum simulation horizon (h). The service extends it to the end of
+        # the PV forecast so the autarky floor accounts for ALL of tomorrow's
+        # recharge (a cloudy tomorrow then holds feeding back). It never extends
+        # blindly past the forecast (that would assume 0 PV -> false trough).
         "sim_horizon_h": 24.0,
     },
     # No fixed feed window: timing comes from the learned per-hour absorption
