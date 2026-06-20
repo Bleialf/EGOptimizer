@@ -28,12 +28,14 @@ from .const import (
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
     CONF_HARD_MIN_ENTITY,
+    CONF_LOAD_AVG_MINUTES,
     CONF_LOAD_ENTITY,
     CONF_RETENTION_DAYS,
     CONF_SCAN_MINUTES,
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
+    DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SCAN_MINUTES,
     DOMAIN,
@@ -168,6 +170,8 @@ class EGOptimizerOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_HARD_MIN_ENTITY, default=cur.get(CONF_HARD_MIN_ENTITY, "")): _SENSOR,
                 vol.Optional(CONF_SCAN_MINUTES, default=cur.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)):
                     NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min")),
+                vol.Optional(CONF_LOAD_AVG_MINUTES, default=cur.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES)):
+                    NumberSelector(NumberSelectorConfig(min=0, max=60, step=1, unit_of_measurement="min")),
                 vol.Optional(CONF_RETENTION_DAYS, default=cur.get(CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)):
                     NumberSelector(NumberSelectorConfig(min=0, max=3650, step=30, unit_of_measurement="days")),
             }

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -15,6 +17,7 @@ from .const import (
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
     CONF_HARD_MIN_ENTITY,
+    CONF_LOAD_AVG_MINUTES,
     CONF_LOAD_ENTITY,
     CONF_MODE,
     CONF_SCAN_MINUTES,
@@ -23,9 +26,11 @@ from .const import (
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_TARGET_MORNING_SOC,
     DEFAULT_AGGRESSIVENESS,
+    DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_MODE,
     DEFAULT_SCAN_MINUTES,
     DEFAULT_TARGET_MORNING_SOC,
+    LOAD_SAMPLE_SECONDS,
     SOLCAST_ATTR,
 )
 
@@ -46,6 +51,11 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         self._solcast = data.get(CONF_SOLCAST_ENTITY)
         self._solcast_tomorrow = data.get(CONF_SOLCAST_TOMORROW_ENTITY)
         self._hard_min = data.get(CONF_HARD_MIN_ENTITY)
+        # Rolling average of the raw load, sampled on a fast internal timer so
+        # the brain gets a smoothed value -- no statistics sensor required.
+        avg_min = float(data.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES))
+        maxlen = max(1, round(avg_min * 60 / LOAD_SAMPLE_SECONDS))
+        self._load_samples: deque[float] = deque(maxlen=maxlen)
         # Mutable runtime controls, also editable via number/select entities.
         self.target_morning_soc = float(
             data.get(CONF_TARGET_MORNING_SOC, DEFAULT_TARGET_MORNING_SOC)
@@ -86,6 +96,28 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         except (ValueError, TypeError):
             return None
 
+    @callback
+    def _sample_load(self, _now=None) -> None:
+        """Append the current raw load (kW) to the rolling buffer (fast timer)."""
+        val = self._num(self._load, power_to_kw=True)
+        if val is not None:
+            self._load_samples.append(val)
+
+    def start_load_sampling(self):
+        """Begin sampling the load sensor; returns an unsubscribe callback."""
+        if not self._load:
+            return lambda: None
+        self._sample_load()  # seed immediately so the first recompute isn't raw
+        return async_track_time_interval(
+            self.hass, self._sample_load, timedelta(seconds=LOAD_SAMPLE_SECONDS)
+        )
+
+    def _averaged_load(self) -> float | None:
+        """Mean of buffered samples (kW); falls back to the instant reading."""
+        if self._load_samples:
+            return round(sum(self._load_samples) / len(self._load_samples), 4)
+        return self._num(self._load, power_to_kw=True)
+
     def _build_payload(self) -> dict:
         soc = self._num(self._soc)
         payload: dict = {
@@ -95,7 +127,7 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
             "mode": self.mode,
             "exploration_aggressiveness": self.aggressiveness,
         }
-        load = self._num(self._load, power_to_kw=True)
+        load = self._averaged_load()
         if load is not None:
             payload["load_now_kw"] = load
         hard_min = self._num(self._hard_min)

@@ -21,13 +21,19 @@ CONF_MODE = "mode"
 
 CONF_RETENTION_DAYS = "retention_days"
 CONF_AGGRESSIVENESS = "exploration_aggressiveness"
+CONF_LOAD_AVG_MINUTES = "load_average_minutes"
 
 DEFAULT_SCAN_MINUTES = 15
 DEFAULT_TARGET_MORNING_SOC = 50.0
 DEFAULT_MODE = "explore"
 DEFAULT_RETENTION_DAYS = 1095          # ~3 years; 0 = keep everything
 DEFAULT_AGGRESSIVENESS = 0.15
+DEFAULT_LOAD_AVG_MINUTES = 15          # rolling-average window for the load sensor
 MODES = ["explore", "locked"]
+
+# How often (seconds) we sample the raw load into the rolling-average buffer.
+# Decoupled from the recompute interval so smoothing works regardless of it.
+LOAD_SAMPLE_SECONDS = 30
 
 # Solcast detailedHourly attribute (varies by integration version).
 SOLCAST_ATTR = "detailedHourly"

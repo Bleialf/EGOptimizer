@@ -19,7 +19,7 @@
           "brain_url": "Address of the brain container, e.g. http://192.168.1.50:8787.",
           "capacity_kwh": "Your battery's usable capacity. Used to convert percentages to kWh.",
           "soc_entity": "Current battery charge in %. Required — this drives every calculation.",
-          "load_entity": "Live household consumption (W). Prefer a smoothed/averaged sensor so a kettle switching on doesn't jerk the plan. The brain uses it to estimate overnight load.",
+          "load_entity": "Your household consumption sensor (W). The raw sensor is fine — the integration samples and averages it internally (15 min by default, tunable in Settings) so a kettle blip can't jerk the feed setpoint. Used to estimate overnight load.",
           "solcast_entity": "Solcast 'Prognose heute' sensor (e.g. sensor.solcast_pv_forecast_forecast_today). The brain reads its hourly 'detailedHourly' attribute and takes the pessimistic P10 estimate per hour — P10 because under-promising on PV keeps your autarky safe.",
           "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor (e.g. ..._forecast_tomorrow). The brain ALWAYS needs tomorrow too — the overnight low point falls tomorrow morning, where the recharge curve lives. You can usually leave this blank: if your today sensor is named ..._today, the matching ..._tomorrow is detected automatically. Set it only if your naming differs.",
           "hard_min_entity": "Optional: your Victron minimum-SoC number. Used only to clamp the target — the brain never controls SoC itself.",
@@ -66,16 +66,18 @@
           "solcast_tomorrow_entity": "Solcast forecast — tomorrow (Prognose morgen)",
           "hard_min_entity": "Victron minimum SoC (optional)",
           "scan_minutes": "Recompute interval",
+          "load_average_minutes": "Smooth load over (minutes)",
           "retention_days": "Keep data for (days)"
         },
         "data_description": {
           "capacity_kwh": "Your battery's usable capacity in kWh.",
           "soc_entity": "Battery charge in % — required.",
-          "load_entity": "Smoothed household consumption (W). The plan adapts to it every recompute.",
+          "load_entity": "Your raw household-consumption sensor (W). No need to pre-smooth it — the integration averages it for you (see below).",
           "solcast_entity": "Solcast 'Prognose heute' sensor (hourly 'detailedHourly', P10 estimate).",
           "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor. Combined with today so the forward curve always reaches tomorrow's morning recharge; past hours ignored.",
           "hard_min_entity": "Optional Victron minimum-SoC number, used only to clamp the target.",
           "scan_minutes": "How often to recompute (minutes).",
+          "load_average_minutes": "The load sensor is sampled every 30 s and averaged over this window before going to the brain — this stops a kettle/oven blip from jerking the feed setpoint. 15 min is a good default; set 0 to disable and use the instantaneous value.",
           "retention_days": "Default retention used by 'Delete old data'. 0 keeps everything."
         }
       },

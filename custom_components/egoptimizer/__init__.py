@@ -39,6 +39,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Smooth the load internally: sample it on a fast timer and average it,
+    # so the brain isn't fed a noisy instantaneous draw (which made the feed
+    # setpoint flap). Stops automatically on unload.
+    entry.async_on_unload(coordinator.start_load_sampling())
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _register_services(hass)
     return True
