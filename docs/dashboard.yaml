@@ -1,28 +1,30 @@
 # EGOptimizer dashboard — paste into a dashboard view's "raw configuration".
-# Requires HACS frontend cards: apexcharts-card, mushroom, card-mod.
-#
-# NOTE on entity_ids: Home Assistant prefixed the entities created while the
-# device was in the "Technikraum" area (load sensors, buttons, current_plan)
-# but NOT the older ones. If your ids differ, fix them in Developer Tools →
-# States (all friendly names start with "EGOptimizer …").
+# Requires HACS frontend cards: apexcharts-card, mushroom.
+# Plain-language edition. If an entity_id doesn't resolve, fix it in
+# Developer Tools → States (all friendly names start with "EGOptimizer …").
 title: EGOptimizer
 path: egoptimizer
 icon: mdi:battery-charging-outline
 type: sections
 max_columns: 3
 sections:
+
+  # ─────────────────────────────────────────────────────────── AT A GLANCE
   - type: grid
     cards:
       - type: heading
-        heading: Now & Controls
+        heading: Right now
+
       - type: custom:mushroom-template-card
         entity: sensor.egoptimizer_feed_setpoint
         primary: >-
           {{ (states('sensor.egoptimizer_feed_setpoint') | float(0) / -1000.0) | round(2) }} kW
-        secondary: Active export power (feed-in setpoint)
+        secondary: Power being given to the community right now
         icon: mdi:transmission-tower-export
-        icon_color: "{{ 'green' if states('sensor.egoptimizer_feed_setpoint') | float(0) < 0 else 'grey' }}"
+        icon_color: >-
+          {{ 'green' if states('sensor.egoptimizer_feed_setpoint') | float(0) < 0 else 'grey' }}
         layout: horizontal
+
       - type: custom:mushroom-chips-card
         alignment: center
         chips:
@@ -32,81 +34,108 @@ sections:
             icon_color: >-
               {% set s = states('sensor.egoptimizer_status') %}
               {% if s == 'feeding' %}green{% elif s == 'holding' %}amber{% else %}grey{% endif %}
-            content: "{{ states('sensor.egoptimizer_status') | title }}"
+            content: >-
+              {% set s = states('sensor.egoptimizer_status') %}
+              {% if s == 'feeding' %}Giving now{% elif s == 'holding' %}Waiting{% elif s == 'no_budget' %}Nothing to give{% else %}{{ s | title }}{% endif %}
           - type: template
             entity: sensor.egoptimizer_confidence
-            icon: mdi:head-question-outline
+            icon: mdi:school-outline
             icon_color: >-
               {% set c = states('sensor.egoptimizer_confidence') %}
               {% if c == 'probing' %}blue{% elif c == 'confident' %}green{% elif c == 'locked' %}purple{% else %}grey{% endif %}
-            content: "{{ states('sensor.egoptimizer_confidence') | title }}"
+            content: >-
+              {% set c = states('sensor.egoptimizer_confidence') %}
+              {% if c == 'probing' %}Still learning{% elif c == 'confident' %}Knows the limit{% elif c == 'locked' %}Locked in{% else %}No data yet{% endif %}
+
       - type: markdown
         content: >-
-          **Why:** {{ states('sensor.egoptimizer_reasoning') }}
+          **What it's doing:** {{ states('sensor.egoptimizer_reasoning') }}
+
       - type: grid
         square: false
-        columns: 3
+        columns: 2
         cards:
-          - type: custom:mushroom-entity-card
-            entity: sensor.egoptimizer_eg_budget_tonight
-            name: EG budget
-            icon_color: green
-          - type: custom:mushroom-entity-card
+          - type: custom:mushroom-template-card
             entity: sensor.egoptimizer_planned_tonight
-            name: Planned
+            primary: "{{ states('sensor.egoptimizer_planned_tonight') }} kWh"
+            secondary: Total it plans to give (incl. daytime)
+            icon: mdi:transmission-tower-export
             icon_color: blue
           - type: custom:mushroom-template-card
+            entity: sensor.egoptimizer_eg_budget_tonight
+            primary: "{{ states('sensor.egoptimizer_eg_budget_tonight') }} kWh"
+            secondary: Spare to give before morning
+            icon: mdi:battery-heart-variant
+            icon_color: green
+          - type: custom:mushroom-template-card
             entity: sensor.egoptimizer_forecast_trough_soc
-            primary: "{{ states('sensor.egoptimizer_forecast_trough_soc') }}%"
-            secondary: >-
-              Trough {% set t = states('sensor.egoptimizer_trough_time') %}{{ as_datetime(t).strftime('%H:%M') if as_datetime(t) is not none else 'N/A' }}
+            primary: >-
+              {{ states('sensor.egoptimizer_forecast_trough_soc') }}%
+              {%- set t = states('sensor.egoptimizer_trough_time') -%}
+              {{ ' @ ' ~ as_datetime(t).strftime('%H:%M') if as_datetime(t) is not none else '' }}
+            secondary: Lowest the battery will get tonight
             icon: mdi:battery-low
             icon_color: amber
           - type: custom:mushroom-template-card
             entity: sensor.egoptimizer_pv_takeover_time
             primary: >-
               {% set t = states('sensor.egoptimizer_pv_takeover_time') %}{{ as_datetime(t).strftime('%H:%M') if as_datetime(t) is not none else 'N/A' }}
-            secondary: PV takeover
+            secondary: When solar starts covering the house
             icon: mdi:weather-sunny
             icon_color: yellow
-          - type: custom:mushroom-entity-card
+          - type: custom:mushroom-template-card
             entity: sensor.technikraum_egoptimizer_house_load_now_avg
-            name: Load now
+            primary: "{{ states('sensor.technikraum_egoptimizer_house_load_now_avg') }} kW"
+            secondary: House use right now (smoothed)
+            icon: mdi:home-lightning-bolt
             icon_color: orange
-          - type: custom:mushroom-entity-card
+          - type: custom:mushroom-template-card
             entity: sensor.technikraum_egoptimizer_base_load_overnight_est
-            name: Base load
+            primary: "{{ states('sensor.technikraum_egoptimizer_base_load_overnight_est') }} kW"
+            secondary: Assumed overnight house use
+            icon: mdi:home-clock
             icon_color: blue-grey
+
       - type: entities
-        title: Controls
+        title: Your settings
         show_header_toggle: false
         entities:
           - entity: number.egoptimizer_target_morning_soc
-            name: Target morning SoC
+            name: Keep battery at least (by morning)
           - entity: number.egoptimizer_exploration_aggressiveness
-            name: Exploration aggressiveness
+            name: How boldly to test higher (0 = cautious)
           - entity: select.egoptimizer_learning_mode
-            name: Learning mode
+            name: Mode — explore (learn) or locked (no testing)
           - type: buttons
             entities:
               - entity: button.technikraum_egoptimizer_refresh_recommendation
-                name: Refresh
+                name: Recalculate
                 icon: mdi:refresh
               - entity: button.technikraum_egoptimizer_train_model
-                name: Train
+                name: Re-learn from data
                 icon: mdi:school
 
+  # ─────────────────────────────────────────────────────────── TONIGHT'S PLAN
   - type: grid
     cards:
       - type: heading
-        heading: Tonight's plan & exploration
+        heading: The plan — how much to give, hour by hour
+
+      - type: markdown
+        content: >-
+          **How to read this:** green bars = amounts we already know the
+          community takes; orange bars = a little *extra* we're testing to see if
+          they'll take more (that's how it learns). The blue line is the most
+          we'd give that hour. Bars below the line were trimmed to protect your
+          morning battery target.
+
       - type: custom:apexcharts-card
         graph_span: 24h
         span:
           start: hour
         header:
           show: true
-          title: Feed plan & EG capacity
+          title: Energy given to the community (kWh per hour)
         apex_config:
           xaxis:
             labels:
@@ -117,7 +146,7 @@ sections:
             decimals: 2
         series:
           - entity: sensor.egoptimizer_feed_setpoint
-            name: Exploit
+            name: Give (known amount)
             unit: kWh
             yaxis_id: energy
             type: column
@@ -127,7 +156,7 @@ sections:
                 return [new Date(i.time).getTime(), i.explore ? 0 : i.feed_kwh];
               });
           - entity: sensor.egoptimizer_feed_setpoint
-            name: Explore (probe)
+            name: Give (testing higher)
             unit: kWh
             yaxis_id: energy
             type: column
@@ -137,7 +166,7 @@ sections:
                 return [new Date(i.time).getTime(), i.explore ? i.feed_kwh : 0];
               });
           - entity: sensor.egoptimizer_feed_setpoint
-            name: EG capacity ceiling
+            name: Most we'd give this hour
             unit: kWh
             yaxis_id: energy
             type: line
@@ -147,49 +176,61 @@ sections:
               return (entity.attributes.feed_plan || []).map((i) => {
                 return [new Date(i.time).getTime(), i.capacity_kwh];
               });
+
       - type: markdown
         content: |
-          ### Exploration activity
+          ### Hour-by-hour plan
+          **Will give** = what we'll actually feed · **Aiming for** = the most
+          we'd give if the battery allowed · **Testing?** 🟠 = trying a bit extra
+          to learn, 🟢 = sticking to the known amount. When *Will give* is below
+          *Aiming for*, that hour was trimmed to keep your morning battery target.
           {% set plan = state_attr('sensor.egoptimizer_feed_setpoint', 'feed_plan') or [] %}
           {%- if plan %}
-          {%- set ns = namespace(rows=['| Time | Plan | Capacity | Type |', '| :--- | :--- | :--- | :--- |']) %}
+          {%- set ns = namespace(rows=['| Time | Will give | Aiming for | Testing? |', '| :--- | :--- | :--- | :--- |']) %}
           {%- for i in plan %}
           {%- set t = as_datetime(i.time) %}
           {%- set tt = t.strftime('%H:%M') if t is not none else i.hour %}
-          {%- set ns.rows = ns.rows + ['| **' ~ tt ~ '** | ' ~ ((i.feed_kwh | float(0)) | round(2)) ~ ' kWh | ' ~ ((i.capacity_kwh | float(0)) | round(2)) ~ ' kWh | ' ~ ('🟠 Explore' if i.explore else '🟢 Exploit') ~ ' |'] %}
+          {%- set trimmed = (i.capacity_kwh | float(0)) - (i.feed_kwh | float(0)) > 0.02 %}
+          {%- set give = ((i.feed_kwh | float(0)) | round(2)) ~ (' ⚠️' if trimmed else '') %}
+          {%- set ns.rows = ns.rows + ['| **' ~ tt ~ '** | ' ~ give ~ ' kWh | ' ~ ((i.capacity_kwh | float(0)) | round(2)) ~ ' kWh | ' ~ ('🟠 testing' if i.explore else '🟢 known') ~ ' |'] %}
           {%- endfor %}
 
           {{ ns.rows | join('\n') }}
           {%- else %}
 
-          _No plan (holding / no budget)._
+          _Nothing planned right now (waiting, or no spare energy)._
           {%- endif %}
 
-          ### Current context
           {% set c = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
           {%- if c and c.context and c.context.observations %}
           {%- set ctx = c.context %}
-
-          - Bucket: `{{ ctx.bucket }}` — **{{ ctx.observations | int }}** obs
-          - Best seen censored: **{{ 'yes' if ctx.best_was_censored else 'no' }}**{{ ' (ceiling unknown → probes)' if ctx.best_was_censored else ' (ceiling known → exploits)' }}
-          - Uptake mean / max: {{ (ctx.mean_absorbed_kwh | float(0)) | round(2) }} / {{ (ctx.max_absorbed_kwh | float(0)) | round(2) }} kWh
-          - Recommended capacity: {{ (ctx.recommended_capacity_kwh | float(0)) | round(2) }} kWh
-          {%- else %}
-
-          _No context yet (no budget short-circuits before the model runs)._
+          ### This hour's learning
+          - **When:** {{ ctx.bucket }} (season · weekday/weekend · hour)
+          - **Found their limit yet?** {{ 'No — still testing higher' if ctx.best_was_censored else 'Yes — we know the ceiling' }}
+          - **Community has taken:** {{ (ctx.mean_absorbed_kwh | float(0)) | round(2) }} kWh typical, {{ (ctx.max_absorbed_kwh | float(0)) | round(2) }} kWh best
+          - **Aiming to give this hour:** {{ (ctx.recommended_capacity_kwh | float(0)) | round(2) }} kWh
+          - **Based on {{ ctx.observations | int }} past nights** of this type
           {%- endif %}
 
+  # ─────────────────────────────────────────────────────────── BATTERY FORECAST
   - type: grid
     cards:
       - type: heading
-        heading: Battery & PV forecast
+        heading: Battery forecast (tonight → tomorrow)
+
+      - type: markdown
+        content: >-
+          Green = predicted battery level, yellow = expected solar, red dashes =
+          your morning target. The plan guarantees the green line never crosses
+          below the red line before solar takes over.
+
       - type: custom:apexcharts-card
         graph_span: 24h
         span:
           start: hour
         header:
           show: true
-          title: Projected SoC until PV takeover
+          title: Battery level vs. solar
         apex_config:
           xaxis:
             labels:
@@ -205,8 +246,8 @@ sections:
             decimals: 2
         series:
           - entity: sensor.egoptimizer_feed_setpoint
-            name: SoC forecast
-            unit: '%'
+            name: Battery level
+            unit: "%"
             yaxis_id: soc
             type: line
             color: "#2ecc71"
@@ -216,7 +257,7 @@ sections:
                 return [new Date(i.t).getTime(), i.soc_pct];
               });
           - entity: sensor.egoptimizer_feed_setpoint
-            name: PV forecast
+            name: Solar
             unit: kW
             yaxis_id: pv
             type: area
@@ -227,110 +268,119 @@ sections:
                 return [new Date(i.t).getTime(), i.pv_kw];
               });
           - entity: sensor.egoptimizer_feed_setpoint
-            name: Target SoC
-            unit: '%'
+            name: Morning target
+            unit: "%"
             yaxis_id: soc
             type: line
             color: "#e74c3c"
             stroke_width: 2
-            data_generator: |
+            data_generator: >
               const tgt = (entity.attributes.debug && entity.attributes.debug.inputs
                           && entity.attributes.debug.inputs.target_morning_soc_pct) || 50;
               return (entity.attributes.soc_forecast || []).map((i) => {
                 return [new Date(i.t).getTime(), tgt];
               });
 
+  # ─────────────────────────────────────────────────────────── UNDER THE HOOD
   - type: grid
     cards:
       - type: heading
-        heading: Diagnostics
+        heading: Under the hood (for debugging)
+
       - type: markdown
         content: >-
           {% set d = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
 
-          {% if d %}### Decision
+          {% if d %}### What it decided
 
           | | |
 
           | :--- | :--- |
 
-          | Path | `{{ d.decision.path }}` |
+          | Decision | `{{ d.decision.path }}` |
 
-          | Status / confidence | `{{ d.decision.status }}` / `{{ d.decision.confidence }}` |
-
-
-          ### Inputs
-
-          | | |
-
-          | :--- | :--- |
-
-          | SoC | {{ d.inputs.soc_pct }}% |
-
-          | Target / hard-min | {{ d.inputs.target_morning_soc_pct }}% / {{ d.inputs.hard_min_soc_pct }}% |
-
-          | Capacity | {{ d.inputs.capacity_kwh }} kWh |
-
-          | Load now (smoothed) | {{ (d.inputs.load_now_kw | float(0)) | round(3) }} kW |
-
-          | **Night base load (sim uses)** | **{{ (d.inputs.load_kw | float(0)) | round(3) }} kW** |
-
-          | Mode / aggressiveness | {{ d.inputs.mode }} / {{ d.inputs.exploration_aggressiveness }} |
+          | Giving now? | `{{ d.decision.status }}` ({{ d.decision.confidence }}) |
 
 
-          ### Autarky
+          ### What it's seeing
 
           | | |
 
           | :--- | :--- |
 
-          | EG budget | {{ (d.autarky.eg_budget_kwh | float(0)) | round(2) }} kWh |
+          | Battery now | {{ d.inputs.soc_pct }}% |
 
-          | Trough | {{ d.autarky.trough_soc_pct }}% @ {{ d.autarky.trough_time }} |
+          | Keep ≥ by morning | {{ d.inputs.target_morning_soc_pct }}% (hard floor {{ d.inputs.hard_min_soc_pct }}%) |
 
-          | PV takeover | {{ d.autarky.pv_takeover_time }} |
+          | Battery size | {{ d.inputs.capacity_kwh }} kWh |
 
-          | Model | {{ d.model.bucket_count }} buckets, loaded={{ d.model.loaded }} |
+          | House use now | {{ (d.inputs.load_now_kw | float(0)) | round(3) }} kW |
 
-          {% else %}_No debug data._{% endif %}
+          | **Overnight house use (used for the plan)** | **{{ (d.inputs.load_kw | float(0)) | round(3) }} kW** |
+
+          | Mode / boldness | {{ d.inputs.mode }} / {{ d.inputs.exploration_aggressiveness }} |
+
+
+          ### Battery safety check
+
+          | | |
+
+          | :--- | :--- |
+
+          | Spare to give before morning | {{ (d.autarky.eg_budget_kwh | float(0)) | round(2) }} kWh |
+
+          | Lowest battery point | {{ d.autarky.trough_soc_pct }}% @ {{ d.autarky.trough_time }} |
+
+          | Solar covers house at | {{ d.autarky.pv_takeover_time }} |
+
+          | Learned patterns | {{ d.model.bucket_count }} (model loaded: {{ d.model.loaded }}) |
+
+          {% else %}_No data yet._{% endif %}
+
       - type: custom:mushroom-template-card
         entity: sensor.technikraum_egoptimizer_base_load_overnight_est
         primary: "{{ states('sensor.technikraum_egoptimizer_base_load_overnight_est') }} kW"
         secondary: >-
-          Base load — source: {{ state_attr('sensor.technikraum_egoptimizer_base_load_overnight_est', 'source') }}
+          Overnight house-use estimate (from: {{ state_attr('sensor.technikraum_egoptimizer_base_load_overnight_est', 'source') }})
         icon: mdi:home-clock
         icon_color: blue-grey
+
       - type: history-graph
         hours_to_show: 48
-        title: 48 h history
+        title: Last 48 hours
         entities:
-          - sensor.egoptimizer_feed_setpoint
-          - sensor.egoptimizer_eg_budget_tonight
-          - sensor.egoptimizer_forecast_trough_soc
+          - entity: sensor.egoptimizer_feed_setpoint
+            name: Given to community (W)
+          - entity: sensor.egoptimizer_eg_budget_tonight
+            name: Spare to give (kWh)
+          - entity: sensor.egoptimizer_forecast_trough_soc
+            name: Lowest battery forecast (%)
 
+  # ─────────────────────────────────────────────────────────── DATA & SETTINGS
   - type: grid
     cards:
       - type: heading
-        heading: Data & settings
+        heading: Data & setup
+
       - type: markdown
         content: >-
-          ### Configuration
-
-          Data upload (CSV), battery/entity settings, retention and deletion all live in:
+          **Upload your grid data, change battery/sensor settings, or delete old
+          data** here:
 
 
           **Settings → Devices & Services → EGOptimizer → Configure**
 
 
-          Use the buttons below for manual recompute / retrain.
+          Use the buttons below to recalculate now or re-learn from your data.
+
       - type: entities
         show_header_toggle: false
         entities:
           - entity: button.technikraum_egoptimizer_refresh_recommendation
-            name: Recompute now
+            name: Recalculate now
             icon: mdi:refresh
           - entity: button.technikraum_egoptimizer_train_model
-            name: Retrain model
+            name: Re-learn from data
             icon: mdi:school
           - entity: update.egoptimizer_update
             name: Integration update
