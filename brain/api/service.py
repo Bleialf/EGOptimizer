@@ -22,6 +22,7 @@ import json
 from datetime import datetime
 
 from brain.forecast.reserve import ReserveInputs, compute_reserve
+from brain.forecast.simulate import simulate_soc
 from brain.model.capacity import CapacityModel
 from brain.model.context import bucket_key
 from brain.model.schedule import feed_now_kw, hours_until, plan_feed_autarky
@@ -132,6 +133,11 @@ def recommend(
     decision_path = "no_budget"
     model_bucket_count = len(model.buckets) if model is not None else 0
     planned_total = 0.0
+    # Trajectory to DISPLAY. Default = the no-feed baseline; once we have a plan
+    # we re-simulate WITH its feeds so the trough/forecast reflect what will
+    # actually happen (the plan drives SoC down to the target -- showing the
+    # no-feed trough would wrongly read high and contradict the trimmed hours).
+    disp_traj = res.trajectory
 
     if model is not None and model.buckets:
         plan = plan_feed_autarky(
@@ -145,6 +151,11 @@ def recommend(
             for p in plan
         ]
         planned_total = sum(p.feed_kwh for p in plan)
+        if planned_total > 1e-6:
+            disp_traj = simulate_soc(
+                now, soc_kwh, capacity, load_kw, pv_slots,
+                feed_by_hour={p.ts: p.feed_kwh for p in plan}, horizon_h=horizon_h,
+            )
         feed_kwh, explore = feed_now_kw(plan, now)
         feed_kw = min(feed_kwh, bat["max_discharge_kw"])
         cur_cap, _, cur_stats = model.recommend_capacity(now, mode=mode, aggressiveness=aggressiveness)
@@ -188,13 +199,20 @@ def recommend(
     # When/when's the next planned feed, for a clear "what happens next".
     next_feed = next((p["time"] for p in feed_plan if p["feed_kwh"] > 0), None)
 
+    # Displayed trough/forecast come from the PLANNED trajectory (with feeds),
+    # so they reflect what will actually happen, not the no-feed baseline.
+    disp_trough_pct = disp_traj.trough_soc_pct
+    disp_trough_iso = disp_traj.trough_time.isoformat(timespec="minutes")
+    disp_pv_iso = (disp_traj.pv_takeover_time.isoformat(timespec="minutes")
+                   if disp_traj.pv_takeover_time else None)
+
     # Plain-language "what it's doing" sentence. Kept well under HA's 255-char
     # sensor-state limit so it never gets truncated on the dashboard.
     _hhmm = lambda iso: iso[11:16] if iso and len(iso) >= 16 else "—"
     target = res.effective_target_pct
-    solar = (f"solar takes over at {_hhmm(res.pv_takeover_time)}"
-             if res.pv_takeover_time else "no solar recovery in forecast")
-    low = f"lowest ~{res.trough_soc_pct:.0f}% at {_hhmm(res.trough_time)}, then {solar}"
+    solar = (f"solar takes over at {_hhmm(disp_pv_iso)}"
+             if disp_pv_iso else "no solar recovery in forecast")
+    low = f"lowest ~{disp_trough_pct:.0f}% at {_hhmm(disp_trough_iso)}, then {solar}"
     probe_phrase = {
         "probing": " (testing a bit higher to learn)",
         "confident": " (the known amount)",
@@ -227,13 +245,13 @@ def recommend(
         "context_observations": context_obs,         # how much data backs this hour
         "next_feed_time": next_feed,
         "target_morning_soc_pct": res.effective_target_pct,
-        "trough_soc_pct": res.trough_soc_pct,
-        "trough_time": res.trough_time,
-        "pv_takeover_time": res.pv_takeover_time,
+        "trough_soc_pct": disp_trough_pct,           # AFTER the plan's feeds
+        "trough_time": disp_trough_iso,
+        "pv_takeover_time": disp_pv_iso,
         "load_kw": round(load_kw, 3),
         "rationale": reasoning,
         "feed_plan": feed_plan,                      # full hour-by-hour schedule
-        "soc_forecast": _downsample(res.trajectory.points),
+        "soc_forecast": _downsample(disp_traj.points),
         # Structured trace of WHY this decision happened -- for debugging.
         "debug": {
             "decision": {
@@ -257,9 +275,11 @@ def recommend(
                 "has_current_bucket": bool(model is not None and bucket_key(now) in model.buckets),
             },
             "autarky": {
-                "eg_budget_kwh": res.eg_budget_kwh,
-                "trough_soc_pct": res.trough_soc_pct, "trough_time": res.trough_time,
-                "pv_takeover_time": res.pv_takeover_time,
+                "eg_budget_kwh": res.eg_budget_kwh,                 # overnight headroom (no-feed)
+                "trough_soc_pct": disp_trough_pct,                 # AFTER the plan's feeds
+                "trough_time": disp_trough_iso,
+                "trough_soc_pct_nofeed": res.trough_soc_pct,        # baseline, for reference
+                "pv_takeover_time": disp_pv_iso,
                 "reserve_note": res.rationale,
             },
             "context": {

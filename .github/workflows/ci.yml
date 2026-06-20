@@ -19,6 +19,21 @@ jobs:
       - name: Run tests (stdlib only)
         run: python -m unittest discover -s tests -v
 
+  coverage:
+    # Enforces 100% line coverage of the brain so decision-path/wiring bugs
+    # (e.g. the trough-display bug) can't slip through untested again.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install coverage pyyaml
+      - name: Tests with coverage (brain must stay 100%)
+        run: |
+          python -m coverage run -m unittest discover -s tests
+          python -m coverage report -m --include="brain/*" --fail-under=100
+
   hacs:
     runs-on: ubuntu-latest
     steps:
