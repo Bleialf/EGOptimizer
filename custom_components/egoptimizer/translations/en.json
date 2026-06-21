@@ -66,6 +66,9 @@
           "solcast_tomorrow_entity": "Solcast forecast — tomorrow (Prognose morgen)",
           "hard_min_entity": "Victron minimum SoC (optional)",
           "scan_minutes": "Recompute interval",
+          "fetch_username": "Grid portal username (auto-fetch)",
+          "fetch_password": "Grid portal password (auto-fetch)",
+          "fetch_hour": "Daily fetch hour",
           "load_average_minutes": "Smooth load over (minutes)",
           "base_load_window_minutes": "Base-load window (minutes)",
           "base_load_percentile": "Base-load percentile",
@@ -80,6 +83,9 @@
           "solcast_tomorrow_entity": "Solcast 'Prognose morgen' sensor. Combined with today so the forward curve always reaches tomorrow's morning recharge; past hours ignored.",
           "hard_min_entity": "Optional Victron minimum-SoC number, used only to clamp the target.",
           "scan_minutes": "How often to recompute (minutes).",
+          "fetch_username": "Your login for the grid operator's smart-meter portal (NetzNÖ). Set this and the password to let the brain pull your feed-in data automatically every day — no more manual CSV exports. Leave blank to keep uploading CSVs by hand.",
+          "fetch_password": "Password for the portal login above. Stored in Home Assistant and sent to your local brain only when it fetches; the brain never saves it.",
+          "fetch_hour": "Local hour to pull yesterday's data each day. Default 06:00 — late enough that the operator has settled the community (EG) allocation for the prior day. The energy split lands a day or two late, so each run also re-pulls the last few days to upgrade them.",
           "load_average_minutes": "The load sensor is sampled every 30 s and averaged over this window for the 'load now' figure — this stops a kettle/oven blip from jerking the feed setpoint. 15 min is a good default; set 0 to disable.",
           "base_load_window_minutes": "Only a fallback while history warms up: window of live samples used to guess the base load before recorder history is available. The real overnight figure comes from your load sensor's recorded night-hour history (00:00–06:00, last 7 days).",
           "base_load_percentile": "Which percentile counts as 'base load' — applied to BOTH the live fallback and the recorded night-hour history. 25 ≈ the quiet baseline (fridge/standby). Lower = lighter night assumed → feeds more; higher = more conservative for autarky. Default 25.",
@@ -121,6 +127,14 @@
     "train": {
       "name": "Train model",
       "description": "Refit the absorption model from all imported data."
+    },
+    "fetch": {
+      "name": "Fetch grid data",
+      "description": "Pull the latest feed-in data straight from the grid operator's portal now (the brain logs in, de-duplicates, and retrains). Requires portal credentials in Options → Settings.",
+      "fields": {
+        "since": { "name": "Since", "description": "First day (YYYY-MM-DD). Empty = automatic rolling window; set for a one-time backfill." },
+        "until": { "name": "Until", "description": "Last day (YYYY-MM-DD). Defaults to today." }
+      }
     }
   }
 }

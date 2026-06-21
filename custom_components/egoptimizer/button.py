@@ -18,7 +18,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
 ) -> None:
     coord = hass.data[DOMAIN][entry.entry_id]
-    add([TrainModelButton(coord), RefreshNowButton(coord)])
+    buttons = [TrainModelButton(coord), RefreshNowButton(coord)]
+    if coord.has_fetch_credentials():
+        buttons.append(FetchDataButton(coord))
+    add(buttons)
 
 
 class TrainModelButton(EGOptimizerEntity, ButtonEntity):
@@ -47,3 +50,20 @@ class RefreshNowButton(EGOptimizerEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.async_request_refresh()
+
+
+class FetchDataButton(EGOptimizerEntity, ButtonEntity):
+    """Pull the latest data from the grid operator now (brain logs in)."""
+
+    _attr_name = "Fetch grid data now"
+    _attr_icon = "mdi:cloud-download"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "fetch_data")
+
+    async def async_press(self) -> None:
+        try:
+            await self.coordinator.async_fetch_now()
+        except Exception as exc:  # noqa: BLE001
+            raise HomeAssistantError(f"Fetch failed: {exc}") from exc

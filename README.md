@@ -188,12 +188,32 @@ Two ways to connect, both documented in **[docs/homeassistant.md](docs/homeassis
 | 1 | Data foundation: provider plugins, NetzNÖ import, SQLite, absorption analysis | ✅ |
 | 2 | Autarky reserve via forward battery **simulation** (trough-aware, target morning SoC) | ✅ |
 | 3 | Censored demand model + **UCB exploration** → learned nightly schedule | ✅ |
+| 3.5 | **Automated daily data pull** from the operator's portal (no manual CSV exports) | ✅ |
 | 4 | Close the loop: drive the Victron ESS grid setpoint, with guardrails | ⏳ |
+
+## Automated data updates (no more manual CSV exports)
+
+Once your history is imported, the brain can keep itself up to date by pulling
+straight from your grid operator's smart-meter portal:
+
+- Put your portal login in the HA integration (**Options → Settings → Grid
+  portal username/password**) and pick a daily fetch hour.
+- Each day the brain logs in, downloads recent days, **de-duplicates** (re-pulling
+  the unsettled tail so the energy-community split is upgraded as it lands ~1–2
+  days late), and retrains.
+- Trigger it on demand with the **"Fetch grid data now"** button or the
+  `egoptimizer.fetch` service; the **"Last grid fetch"** sensor confirms it ran,
+  and the **EG-absorption sensors** show how much the community is taking.
+
+Direct API: `POST /fetch {"provider","credentials","since?","until?","train?"}`
+and `GET /stats`. Credentials are used per-call and never stored by the brain
+(or kept on the brain host via `NETZNOE_USER` / `NETZNOE_PWD` env vars instead).
 
 ## Adding another grid operator
 
 1. Create `brain/providers/<operator>.py` with a `Provider` subclass implementing
-   `parse()` (and optionally `fetch()` for automated pulls).
+   `parse()` for manual exports — and, if the operator has an API, `fetch_records()`
+   + `credential_fields()` for unattended daily pulls (one file, both paths).
 2. Register it in `brain/providers/__init__.py`.
 
 Everything downstream works on the normalised `EnergyRecord` — nothing else

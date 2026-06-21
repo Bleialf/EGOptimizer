@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower, UnitOfEnergy, PERCENTAGE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -70,6 +71,26 @@ def _decision_info(data: dict) -> dict:
     }
 
 
+# --- EG-absorption stat readers (from coordinator.stats = brain GET /stats) ---
+def _stat_pct(block: str, field: str):
+    def get(c):
+        v = ((getattr(c, "stats", None) or {}).get(block) or {}).get(field)
+        return round(v * 100.0, 1) if isinstance(v, (int, float)) else None
+    return get
+
+
+def _stat_kwh(block: str, field: str):
+    def get(c):
+        v = ((getattr(c, "stats", None) or {}).get(block) or {}).get(field)
+        return round(v, 1) if isinstance(v, (int, float)) else None
+    return get
+
+
+def _best_hour(c):
+    h = (getattr(c, "stats", None) or {}).get("best_hour")
+    return f"{h:02d}:00" if isinstance(h, int) else None
+
+
 SENSORS: tuple[EGSensor, ...] = (
     EGSensor(key="feed_kw", name="Feed setpoint", icon="mdi:transmission-tower-export",
              native_unit_of_measurement=UnitOfPower.WATT,
@@ -109,11 +130,40 @@ SENSORS: tuple[EGSensor, ...] = (
 )
 
 
+# EG-absorption history (how much the community is actually taking). These read
+# the brain's GET /stats (cached on the coordinator), refreshed daily after the
+# pull. The headline rate carries the full breakdown as attributes.
+EG_SENSORS: tuple[EGSensor, ...] = (
+    EGSensor(key="eg_absorption_rate_30d", name="EG absorption rate (30d)",
+             icon="mdi:transmission-tower-import", native_unit_of_measurement=PERCENTAGE,
+             coord=_stat_pct("recent", "absorption_rate")),
+    EGSensor(key="eg_absorption_rate", name="EG absorption rate (all-time)",
+             icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE,
+             coord=_stat_pct("all_time", "absorption_rate")),
+    EGSensor(key="eg_absorbed_total", name="EG absorbed total",
+             icon="mdi:battery-charging-high",
+             native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+             coord=_stat_kwh("all_time", "absorbed_kwh")),
+    EGSensor(key="eg_surplus_total", name="EG surplus spilled total",
+             icon="mdi:transmission-tower", native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+             coord=_stat_kwh("all_time", "surplus_kwh")),
+    EGSensor(key="eg_censored_pct", name="EG saturated (took 100%)",
+             icon="mdi:gauge-full", native_unit_of_measurement=PERCENTAGE,
+             coord=_stat_pct("all_time", "censored_pct")),
+    EGSensor(key="eg_best_hour", name="EG best absorbing hour",
+             icon="mdi:clock-star-four-points-outline", coord=_best_hour),
+    # Status entity to confirm the daily pull is working.
+    EGSensor(key="last_grid_fetch", name="Last grid fetch", icon="mdi:cloud-clock",
+             entity_category=EntityCategory.DIAGNOSTIC,
+             coord=lambda c: (getattr(c, "last_fetch", None) or {}).get("at") or "never"),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
 ) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    add(EGOptimizerSensor(coordinator, d) for d in SENSORS)
+    add(EGOptimizerSensor(coordinator, d) for d in SENSORS + EG_SENSORS)
 
 
 class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
@@ -153,4 +203,20 @@ class EGOptimizerSensor(EGOptimizerEntity, SensorEntity):
             }
         if self.entity_description.key == "base_load":
             return {"source": getattr(self.coordinator, "base_load_source", None)}
+        if self.entity_description.key == "eg_absorption_rate_30d":
+            # Full EG-absorption breakdown hangs off the headline rate sensor.
+            stats = getattr(self.coordinator, "stats", None) or {}
+            return {
+                "all_time": stats.get("all_time"),
+                "recent": stats.get("recent"),
+                "recent_days": stats.get("recent_days"),
+                "best_hour": stats.get("best_hour"),
+                "best_hour_rate": stats.get("best_hour_rate"),
+                "worst_hour": stats.get("worst_hour"),
+                "worst_hour_rate": stats.get("worst_hour_rate"),
+                "settled_intervals": stats.get("settled_intervals"),
+                "last_settled": stats.get("last_settled_ts"),
+            }
+        if self.entity_description.key == "last_grid_fetch":
+            return getattr(self.coordinator, "last_fetch", None) or None
         return None

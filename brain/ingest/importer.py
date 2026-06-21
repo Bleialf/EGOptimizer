@@ -7,11 +7,28 @@ drop files into a folder on the host; you can POST them to /import instead.
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from brain.ingest.clean import filter_outliers
 from brain.providers import get_provider
+from brain.records import EnergyRecord
 from brain.storage import Store
+
+
+def import_records(
+    records: Iterable[EnergyRecord], db: Path | str, max_interval_kwh: float
+) -> dict:
+    """Clean an in-memory record stream and upsert it; return a summary.
+
+    Used by automated pulls (``/fetch``): a provider's ``fetch_records`` yields
+    straight into here, no file roundtrip. Idempotent via the store's upsert.
+    """
+    kept, dropped = filter_outliers(records, max_interval_kwh)
+    with Store(db) as store:
+        written = store.upsert_many(kept)
+        summary = store.summary()
+    return {"imported": written, "dropped": len(dropped), "store": summary}
 
 
 def import_path(

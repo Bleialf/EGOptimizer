@@ -19,18 +19,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 from brain import __version__
+from brain.analysis.stats import absorption_stats
 from brain.api.service import recommend
 from brain.config import load_config
-from brain.ingest.importer import import_bytes
+from brain.ingest.importer import import_bytes, import_records
 from brain.model.capacity import CapacityModel
 from brain.model.train import train_model
+from brain.providers import available, get_provider
 from brain.storage import Store
 
 logger = logging.getLogger("egoptimizer")
@@ -39,6 +42,37 @@ _CONFIG = load_config()
 _DB_PATH = _CONFIG["storage"]["db_path"]
 _MODEL_PATH = _CONFIG.get("model", {}).get("path", "data/model.json")
 _MAX_INTERVAL = _CONFIG["ingest"]["max_interval_kwh"]
+
+
+def _parse_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
+
+
+def _default_since(until: date) -> date:
+    """Rolling re-pull window for the daily /fetch.
+
+    Start a couple of days before the last settled interval (so late-arriving
+    EG allocations get upgraded), or two weeks back on an empty store.
+    """
+    with Store(_DB_PATH) as store:
+        last_settled = store.summary().get("last_settled_ts")
+    if last_settled:
+        return date.fromisoformat(last_settled[:10]) - timedelta(days=2)
+    return until - timedelta(days=14)
+
+
+def _creds_from_env(name: str, provider) -> dict[str, str]:
+    """Read a provider's credential fields from env (e.g. NETZNOE_USER/_PWD).
+
+    Lets operators keep secrets on the brain host instead of sending them from
+    Home Assistant. HA-supplied credentials in the request body take priority.
+    """
+    creds = {}
+    for field in provider.credential_fields():
+        env = f"{name.upper()}_{field.upper()}"
+        if env in os.environ:
+            creds[field] = os.environ[env]
+    return creds
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -72,6 +106,11 @@ class Handler(BaseHTTPRequestHandler):
                     "FROM decisions ORDER BY id DESC LIMIT 20"
                 ).fetchall()
             self._send(200, {"decisions": [dict(r) for r in rows]})
+        elif self.path.startswith("/stats"):
+            # EG-absorption headline stats (drives the HA absorption sensors).
+            with Store(_DB_PATH) as store:
+                records = store.fetch_all()
+            self._send(200, absorption_stats(records))
         else:
             self._send(404, {"error": "not found"})
 
@@ -121,6 +160,50 @@ class Handler(BaseHTTPRequestHandler):
                     result["imported"], result["dropped"], result["store"]["n"],
                 )
                 if params.get("train") in ("1", "true", "yes"):
+                    logger.info("  training model...")
+                    result["train"] = train_model(
+                        _DB_PATH, _MODEL_PATH,
+                        _CONFIG["model"]["exploration_aggressiveness"],
+                        _CONFIG["model"]["mode"],
+                        _CONFIG["model"].get("learn_half_life_days", 45.0),
+                    )
+                    logger.info(
+                        "  trained: %s records, %s buckets",
+                        result["train"]["records"], result["train"]["buckets"],
+                    )
+                self._send(200, result)
+
+            elif route.path == "/fetch":
+                # Automated pull straight from the operator's API. Body:
+                #   {"provider": "netznoe",
+                #    "credentials": {"user": "...", "pwd": "..."},   # or via env
+                #    "since": "2025-07-24", "until": "2026-06-20",   # optional
+                #    "train": true}
+                # since defaults to a rolling re-pull of the unsettled tail, so
+                # the daily call just upgrades recent days as the EG settles.
+                payload = json.loads(self._body() or b"{}")
+                provider_name = payload.get("provider", "netznoe")
+                if provider_name not in available():
+                    raise ValueError(f"unknown provider {provider_name!r}")
+                provider = get_provider(provider_name)
+                creds = payload.get("credentials") or _creds_from_env(
+                    provider_name, provider
+                )
+                until = _parse_date(payload.get("until")) or date.today()
+                since = _parse_date(payload.get("since")) or _default_since(until)
+                logger.info(
+                    "POST /fetch: %s %s..%s", provider_name, since, until
+                )
+                records = provider.fetch_records(
+                    credentials=creds, since=since, until=until
+                )
+                result = import_records(records, _DB_PATH, _MAX_INTERVAL)
+                logger.info(
+                    "  imported=%s dropped=%s total=%s last=%s",
+                    result["imported"], result["dropped"],
+                    result["store"]["n"], result["store"]["last_ts"],
+                )
+                if payload.get("train"):
                     logger.info("  training model...")
                     result["train"] = train_model(
                         _DB_PATH, _MODEL_PATH,
@@ -191,7 +274,10 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("data db : %s", _DB_PATH)
     logger.info("model   : %s", _MODEL_PATH)
     logger.info("listening: http://%s:%s", args.host, args.port)
-    logger.info("endpoints: POST /recommend /import /train /purge | GET /health /decisions")
+    logger.info(
+        "endpoints: POST /recommend /import /fetch /train /purge | "
+        "GET /health /decisions /stats"
+    )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -22,6 +22,8 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .const import (
@@ -29,6 +31,9 @@ from .const import (
     CONF_CAPACITY_KWH,
     CONF_BASE_LOAD_PERCENTILE,
     CONF_BASE_LOAD_WINDOW_MINUTES,
+    CONF_FETCH_HOUR,
+    CONF_FETCH_PASSWORD,
+    CONF_FETCH_USERNAME,
     CONF_HARD_MIN_ENTITY,
     CONF_LOAD_AVG_MINUTES,
     CONF_LOAD_ENTITY,
@@ -40,6 +45,7 @@ from .const import (
     CONF_SOLCAST_TOMORROW_ENTITY,
     DEFAULT_BASE_LOAD_PERCENTILE,
     DEFAULT_BASE_LOAD_WINDOW_MINUTES,
+    DEFAULT_FETCH_HOUR,
     DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_NIGHT_LOAD_OVERRIDE_KW,
     DEFAULT_RETENTION_DAYS,
@@ -48,6 +54,7 @@ from .const import (
 )
 
 _SENSOR = EntitySelector(EntitySelectorConfig(domain=["sensor", "number", "input_number"]))
+_PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 STEP_USER = vol.Schema(
     {
@@ -176,6 +183,16 @@ class EGOptimizerOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_HARD_MIN_ENTITY, default=cur.get(CONF_HARD_MIN_ENTITY, "")): _SENSOR,
                 vol.Optional(CONF_SCAN_MINUTES, default=cur.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)):
                     NumberSelector(NumberSelectorConfig(min=1, max=120, step=1, unit_of_measurement="min")),
+                # --- automated daily pull from the grid operator's portal ----
+                # Leave the username/password blank to keep using manual CSV
+                # uploads. With them set, the brain logs in daily and pulls
+                # yesterday's data itself (no Developer Tools, no folders).
+                vol.Optional(CONF_FETCH_USERNAME, default=cur.get(CONF_FETCH_USERNAME, "")):
+                    TextSelector(),
+                vol.Optional(CONF_FETCH_PASSWORD, default=cur.get(CONF_FETCH_PASSWORD, "")):
+                    _PASSWORD,
+                vol.Optional(CONF_FETCH_HOUR, default=cur.get(CONF_FETCH_HOUR, DEFAULT_FETCH_HOUR)):
+                    NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, unit_of_measurement="h")),
                 vol.Optional(CONF_LOAD_AVG_MINUTES, default=cur.get(CONF_LOAD_AVG_MINUTES, DEFAULT_LOAD_AVG_MINUTES)):
                     NumberSelector(NumberSelectorConfig(min=0, max=60, step=1, unit_of_measurement="min")),
                 vol.Optional(CONF_BASE_LOAD_WINDOW_MINUTES, default=cur.get(CONF_BASE_LOAD_WINDOW_MINUTES, DEFAULT_BASE_LOAD_WINDOW_MINUTES)):

@@ -40,3 +40,27 @@ import_csv:
 train:
   name: Train model
   description: Refit the EGOptimizer absorption model from all imported data.
+
+fetch:
+  name: Fetch grid data
+  description: >
+    Pull the latest feed-in data straight from the grid operator's portal now.
+    The brain logs in, downloads recent days (re-pulling the unsettled tail so
+    the energy-community split is upgraded as it lands), de-duplicates, and
+    retrains. Requires portal credentials in Options → Settings.
+  fields:
+    since:
+      name: Since
+      description: >
+        First day to pull (YYYY-MM-DD). Leave empty for the automatic rolling
+        window (fills the gap from your last data to today). Set it for a
+        one-time historical backfill, e.g. your energy-community start date.
+      example: "2025-07-24"
+      selector:
+        text:
+    until:
+      name: Until
+      description: Last day to pull (YYYY-MM-DD). Defaults to today.
+      example: "2026-06-20"
+      selector:
+        text:

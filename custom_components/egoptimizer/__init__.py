@@ -32,6 +32,13 @@ IMPORT_SCHEMA = vol.Schema(
     }
 )
 
+FETCH_SCHEMA = vol.Schema(
+    {
+        vol.Optional("since"): cv.string,   # YYYY-MM-DD; omit for the rolling window
+        vol.Optional("until"): cv.string,   # YYYY-MM-DD; defaults to today
+    }
+)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = EGOptimizerCoordinator(hass, entry)
@@ -43,6 +50,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # so the brain isn't fed a noisy instantaneous draw (which made the feed
     # setpoint flap). Stops automatically on unload.
     entry.async_on_unload(coordinator.start_load_sampling())
+    # Daily automated pull from the grid operator (brain logs in + dedups).
+    # No-op unless credentials are configured.
+    entry.async_on_unload(coordinator.start_daily_fetch())
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _register_services(hass)
     return True
@@ -55,6 +65,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN]:
             hass.services.async_remove(DOMAIN, "import_csv")
             hass.services.async_remove(DOMAIN, "train")
+            hass.services.async_remove(DOMAIN, "fetch")
     return unloaded
 
 
@@ -101,5 +112,19 @@ def _register_services(hass: HomeAssistant) -> None:
                 raise HomeAssistantError(f"Train failed: {await resp.text()}")
         await coord.async_request_refresh()
 
+    async def _fetch(call: ServiceCall) -> None:
+        coord = _any_coordinator(hass)
+        if not coord.has_fetch_credentials():
+            raise HomeAssistantError(
+                "No grid-operator credentials configured (Options -> Settings)."
+            )
+        try:
+            await coord.async_fetch_now(
+                since=call.data.get("since"), until=call.data.get("until")
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HomeAssistantError(f"Fetch failed: {exc}") from exc
+
     hass.services.async_register(DOMAIN, "import_csv", _import_csv, schema=IMPORT_SCHEMA)
     hass.services.async_register(DOMAIN, "train", _train)
+    hass.services.async_register(DOMAIN, "fetch", _fetch, schema=FETCH_SCHEMA)

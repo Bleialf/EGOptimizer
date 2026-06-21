@@ -1,7 +1,7 @@
 {
   "domain": "egoptimizer",
   "name": "EGOptimizer",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "documentation": "https://github.com/bleialf/EGOptimizer",
   "issue_tracker": "https://github.com/bleialf/EGOptimizer/issues",
   "codeowners": ["@bleialf"],

@@ -9,7 +9,7 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -19,11 +19,15 @@ from .const import (
     CONF_BASE_LOAD_WINDOW_MINUTES,
     CONF_BRAIN_URL,
     CONF_CAPACITY_KWH,
+    CONF_FETCH_HOUR,
+    CONF_FETCH_PASSWORD,
+    CONF_FETCH_USERNAME,
     CONF_HARD_MIN_ENTITY,
     CONF_LOAD_AVG_MINUTES,
     CONF_LOAD_ENTITY,
     CONF_MODE,
     CONF_NIGHT_LOAD_OVERRIDE_KW,
+    CONF_PROVIDER,
     CONF_SCAN_MINUTES,
     CONF_SOC_ENTITY,
     CONF_SOLCAST_ENTITY,
@@ -32,9 +36,11 @@ from .const import (
     DEFAULT_AGGRESSIVENESS,
     DEFAULT_BASE_LOAD_PERCENTILE,
     DEFAULT_BASE_LOAD_WINDOW_MINUTES,
+    DEFAULT_FETCH_HOUR,
     DEFAULT_LOAD_AVG_MINUTES,
     DEFAULT_MODE,
     DEFAULT_NIGHT_LOAD_OVERRIDE_KW,
+    DEFAULT_PROVIDER,
     DEFAULT_SCAN_MINUTES,
     DEFAULT_TARGET_MORNING_SOC,
     LOAD_SAMPLE_SECONDS,
@@ -43,6 +49,7 @@ from .const import (
     NIGHT_LOAD_REFRESH_MIN,
     NIGHT_START_HOUR,
     SOLCAST_ATTR,
+    STATS_REFRESH_MIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +63,16 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         data = {**entry.data, **entry.options}
         self.base_url = data[CONF_BRAIN_URL].rstrip("/")
         self._url = self.base_url + "/recommend"
+        # Automated daily pull from the grid operator (brain does the login).
+        self._provider = data.get(CONF_PROVIDER, DEFAULT_PROVIDER)
+        self._fetch_user = data.get(CONF_FETCH_USERNAME) or ""
+        self._fetch_pwd = data.get(CONF_FETCH_PASSWORD) or ""
+        self._fetch_hour = int(data.get(CONF_FETCH_HOUR, DEFAULT_FETCH_HOUR))
+        # EG-absorption stats (GET /stats), surfaced as sensors. Throttled.
+        self.stats: dict = {}
+        self._stats_at = None
+        # Result of the most recent /fetch, surfaced as a status sensor.
+        self.last_fetch: dict = {}
         self._capacity = float(data[CONF_CAPACITY_KWH])
         self._soc = data[CONF_SOC_ENTITY]
         self._load = data.get(CONF_LOAD_ENTITY)
@@ -293,6 +310,83 @@ class EGOptimizerCoordinator(DataUpdateCoordinator):
         try:
             async with session.post(self._url, json=payload, timeout=15) as resp:
                 resp.raise_for_status()
-                return await resp.json()
+                data = await resp.json()
         except Exception as exc:  # noqa: BLE001
             raise UpdateFailed(f"brain call failed: {exc}") from exc
+        await self._async_refresh_stats()  # cheap, throttled; never fails the update
+        return data
+
+    # --- automated daily data pull + EG-absorption stats -----------------
+    def has_fetch_credentials(self) -> bool:
+        return bool(self._fetch_user and self._fetch_pwd)
+
+    def start_daily_fetch(self):
+        """Schedule the daily portal pull; returns an unsubscribe callback.
+
+        Fires once a day at the configured local hour, after the operator has
+        settled the prior day's EG allocation. No-op without credentials.
+        """
+        if not self.has_fetch_credentials():
+            return lambda: None
+        return async_track_time_change(
+            self.hass, self._scheduled_fetch, hour=self._fetch_hour, minute=7, second=0
+        )
+
+    @callback
+    def _scheduled_fetch(self, _now=None) -> None:
+        self.hass.async_create_task(self.async_fetch_now())
+
+    async def async_fetch_now(
+        self, since: str | None = None, until: str | None = None
+    ) -> dict:
+        """Trigger the brain to pull the latest data from the operator's API.
+
+        Sends credentials for this call only; the brain keeps no secrets. With
+        no range, the brain picks a rolling window (from just before the last
+        settled day) so the gap to today is filled and the unsettled tail is
+        re-pulled as the EG split lands. Pass ``since`` for a one-time backfill.
+        """
+        if not self.has_fetch_credentials():
+            raise UpdateFailed("no grid-operator credentials configured")
+        body = {
+            "provider": self._provider,
+            "credentials": {"user": self._fetch_user, "pwd": self._fetch_pwd},
+            "train": True,
+        }
+        if since:
+            body["since"] = since
+        if until:
+            body["until"] = until
+        session = async_get_clientsession(self.hass)
+        async with session.post(self.base_url + "/fetch", json=body, timeout=300) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+        store = result.get("store") or {}
+        self.last_fetch = {
+            "at": dt_util.now().replace(microsecond=0).isoformat(),
+            "imported": result.get("imported"),
+            "dropped": result.get("dropped"),
+            "total": store.get("n"),
+            "last_ts": store.get("last_ts"),
+        }
+        _LOGGER.info(
+            "fetch %s: imported=%s total=%s last=%s",
+            self._provider, result.get("imported"), store.get("n"), store.get("last_ts"),
+        )
+        await self._async_refresh_stats(force=True)
+        await self.async_request_refresh()
+        return result
+
+    async def _async_refresh_stats(self, force: bool = False) -> None:
+        now = dt_util.utcnow()
+        if (not force and self._stats_at is not None
+                and (now - self._stats_at) < timedelta(minutes=STATS_REFRESH_MIN)):
+            return
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(self.base_url + "/stats", timeout=15) as resp:
+                resp.raise_for_status()
+                self.stats = await resp.json()
+            self._stats_at = now
+        except Exception as exc:  # noqa: BLE001 -- stats are non-essential
+            _LOGGER.debug("stats refresh failed: %s", exc)

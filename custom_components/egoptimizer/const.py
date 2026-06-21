@@ -25,6 +25,17 @@ CONF_LOAD_AVG_MINUTES = "load_average_minutes"
 CONF_BASE_LOAD_WINDOW_MINUTES = "base_load_window_minutes"
 CONF_BASE_LOAD_PERCENTILE = "base_load_percentile"
 
+# Automated daily data pull from the grid operator's portal (Phase: auto-fetch).
+# The brain logs in and pulls itself (POST /fetch); these just say who/when.
+CONF_PROVIDER = "provider"
+CONF_FETCH_USERNAME = "fetch_username"
+CONF_FETCH_PASSWORD = "fetch_password"
+CONF_FETCH_HOUR = "fetch_hour"               # local hour to pull yesterday's data
+DEFAULT_PROVIDER = "netznoe"
+DEFAULT_FETCH_HOUR = 6                        # after the operator has settled the prior day
+# Don't hammer the brain's full-history /stats scan every recommend cycle.
+STATS_REFRESH_MIN = 60
+
 DEFAULT_SCAN_MINUTES = 15
 DEFAULT_TARGET_MORNING_SOC = 50.0
 DEFAULT_MODE = "explore"
