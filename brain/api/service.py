@@ -284,7 +284,8 @@ def recommend(
             },
             "context": {
                 "bucket": bucket_key(now),
-                "observations": context_obs,
+                "observations": context_obs,                       # raw nights of data
+                "effective_recent_obs": round(cur_stats.weight, 2) if cur_stats else None,
                 "max_absorbed_kwh": getattr(cur_stats, "max_absorbed", None),
                 "mean_absorbed_kwh": round(cur_stats.mean_absorbed, 4) if cur_stats else None,
                 "best_was_censored": getattr(cur_stats, "max_was_censored", None),

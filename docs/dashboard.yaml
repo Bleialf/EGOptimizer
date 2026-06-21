@@ -204,12 +204,13 @@ sections:
           {% set c = state_attr('sensor.egoptimizer_feed_setpoint', 'debug') %}
           {%- if c and c.context and c.context.observations %}
           {%- set ctx = c.context %}
+          {%- set recent = ctx.effective_recent_obs | float(0) %}
           ### This hour's learning
           - **When:** {{ ctx.bucket }} (season · weekday/weekend · hour)
-          - **Found their limit yet?** {{ 'No — still testing higher' if ctx.best_was_censored else 'Yes — we know the ceiling' }}
+          - **Status:** {% if ctx.best_was_censored %}testing higher — your feed gets fully absorbed, so the true limit is still unknown{% elif recent < 5 %}re-checking — little recent data for this slot, so it probes again{% else %}settled — we've seen the limit and feed to it{% endif %}
           - **Community has taken:** {{ (ctx.mean_absorbed_kwh | float(0)) | round(2) }} kWh typical, {{ (ctx.max_absorbed_kwh | float(0)) | round(2) }} kWh best
           - **Aiming to give this hour:** {{ (ctx.recommended_capacity_kwh | float(0)) | round(2) }} kWh
-          - **Based on {{ ctx.observations | int }} past nights** of this type
+          - **Evidence:** {{ ctx.observations | int }} past nights, {{ recent | round(1) }} weighted-recent
           {%- endif %}
 
   # ─────────────────────────────────────────────────────────── BATTERY FORECAST
