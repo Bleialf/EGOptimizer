@@ -28,7 +28,7 @@ from brain.model.context import bucket_key
 from brain.model.schedule import feed_now_kw, hours_until, plan_feed_autarky
 from brain.storage import Store
 
-VERSION = "phase3-bandit"
+VERSION = "0.8.0"
 
 
 def _f(state: dict, key: str, default: float) -> float:
