@@ -15,3 +15,8 @@ brain/config.yaml
 
 # local tooling / editor state -- not part of the public project
 .claude/
+
+# Playwright MCP scratch output (screenshots, snapshots, logs)
+.playwright-mcp/
+smoke-example.png
+*.playwright.png
